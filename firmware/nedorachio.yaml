@@ -15,3 +15,4 @@ packages:
   core: !include packages/01-core.yaml
   zones: !include packages/02-zones.yaml
   sensors: !include packages/03-sensors.yaml
+  tunables: !include packages/04-tunables.yaml

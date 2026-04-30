@@ -33,8 +33,11 @@ sensor:
     accuracy_decimals: 2
     timeout: 30s
     filters:
-      # Temporary: 1 pulse = 1 gallon. Phase 3.1 wires this to `pulses_per_gallon`.
-      - lambda: 'return x;'
+      # pulses/min × (1 gallon / pulses_per_gallon) = gpm
+      - lambda: |-
+          float ppg = id(pulses_per_gallon).state;
+          if (ppg <= 0.0f) return 0.0f;
+          return x / ppg;
     total:
       name: "Flow pulses total"
       id: flow_pulses_total

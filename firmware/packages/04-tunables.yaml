@@ -1,0 +1,782 @@
+# All tunable parameters: number, switch entities. Persisted to flash.
+# Defaults match spec §7.2.
+
+number:
+  # --- Per-zone (×8) ---
+  - platform: template
+    name: "Zone 1 total minutes"
+    id: zone_1_total_min
+    optimistic: true
+    restore_value: true
+    initial_value: 20
+    min_value: 0
+    max_value: 240
+    step: 1
+    unit_of_measurement: "min"
+  - platform: template
+    name: "Zone 2 total minutes"
+    id: zone_2_total_min
+    optimistic: true
+    restore_value: true
+    initial_value: 20
+    min_value: 0
+    max_value: 240
+    step: 1
+    unit_of_measurement: "min"
+  - platform: template
+    name: "Zone 3 total minutes"
+    id: zone_3_total_min
+    optimistic: true
+    restore_value: true
+    initial_value: 20
+    min_value: 0
+    max_value: 240
+    step: 1
+    unit_of_measurement: "min"
+  - platform: template
+    name: "Zone 4 total minutes"
+    id: zone_4_total_min
+    optimistic: true
+    restore_value: true
+    initial_value: 20
+    min_value: 0
+    max_value: 240
+    step: 1
+    unit_of_measurement: "min"
+  - platform: template
+    name: "Zone 5 total minutes"
+    id: zone_5_total_min
+    optimistic: true
+    restore_value: true
+    initial_value: 20
+    min_value: 0
+    max_value: 240
+    step: 1
+    unit_of_measurement: "min"
+  - platform: template
+    name: "Zone 6 total minutes"
+    id: zone_6_total_min
+    optimistic: true
+    restore_value: true
+    initial_value: 20
+    min_value: 0
+    max_value: 240
+    step: 1
+    unit_of_measurement: "min"
+  - platform: template
+    name: "Zone 7 total minutes"
+    id: zone_7_total_min
+    optimistic: true
+    restore_value: true
+    initial_value: 20
+    min_value: 0
+    max_value: 240
+    step: 1
+    unit_of_measurement: "min"
+  - platform: template
+    name: "Zone 8 total minutes"
+    id: zone_8_total_min
+    optimistic: true
+    restore_value: true
+    initial_value: 20
+    min_value: 0
+    max_value: 240
+    step: 1
+    unit_of_measurement: "min"
+
+  - platform: template
+    name: "Zone 1 cycle minutes"
+    id: zone_1_cycle_min
+    optimistic: true
+    restore_value: true
+    initial_value: 10
+    min_value: 1
+    max_value: 60
+    step: 1
+    unit_of_measurement: "min"
+  - platform: template
+    name: "Zone 2 cycle minutes"
+    id: zone_2_cycle_min
+    optimistic: true
+    restore_value: true
+    initial_value: 10
+    min_value: 1
+    max_value: 60
+    step: 1
+    unit_of_measurement: "min"
+  - platform: template
+    name: "Zone 3 cycle minutes"
+    id: zone_3_cycle_min
+    optimistic: true
+    restore_value: true
+    initial_value: 10
+    min_value: 1
+    max_value: 60
+    step: 1
+    unit_of_measurement: "min"
+  - platform: template
+    name: "Zone 4 cycle minutes"
+    id: zone_4_cycle_min
+    optimistic: true
+    restore_value: true
+    initial_value: 10
+    min_value: 1
+    max_value: 60
+    step: 1
+    unit_of_measurement: "min"
+  - platform: template
+    name: "Zone 5 cycle minutes"
+    id: zone_5_cycle_min
+    optimistic: true
+    restore_value: true
+    initial_value: 10
+    min_value: 1
+    max_value: 60
+    step: 1
+    unit_of_measurement: "min"
+  - platform: template
+    name: "Zone 6 cycle minutes"
+    id: zone_6_cycle_min
+    optimistic: true
+    restore_value: true
+    initial_value: 10
+    min_value: 1
+    max_value: 60
+    step: 1
+    unit_of_measurement: "min"
+  - platform: template
+    name: "Zone 7 cycle minutes"
+    id: zone_7_cycle_min
+    optimistic: true
+    restore_value: true
+    initial_value: 10
+    min_value: 1
+    max_value: 60
+    step: 1
+    unit_of_measurement: "min"
+  - platform: template
+    name: "Zone 8 cycle minutes"
+    id: zone_8_cycle_min
+    optimistic: true
+    restore_value: true
+    initial_value: 10
+    min_value: 1
+    max_value: 60
+    step: 1
+    unit_of_measurement: "min"
+
+  - platform: template
+    name: "Zone 1 soak minutes"
+    id: zone_1_soak_min
+    optimistic: true
+    restore_value: true
+    initial_value: 15
+    min_value: 0
+    max_value: 60
+    step: 1
+    unit_of_measurement: "min"
+  - platform: template
+    name: "Zone 2 soak minutes"
+    id: zone_2_soak_min
+    optimistic: true
+    restore_value: true
+    initial_value: 15
+    min_value: 0
+    max_value: 60
+    step: 1
+    unit_of_measurement: "min"
+  - platform: template
+    name: "Zone 3 soak minutes"
+    id: zone_3_soak_min
+    optimistic: true
+    restore_value: true
+    initial_value: 15
+    min_value: 0
+    max_value: 60
+    step: 1
+    unit_of_measurement: "min"
+  - platform: template
+    name: "Zone 4 soak minutes"
+    id: zone_4_soak_min
+    optimistic: true
+    restore_value: true
+    initial_value: 15
+    min_value: 0
+    max_value: 60
+    step: 1
+    unit_of_measurement: "min"
+  - platform: template
+    name: "Zone 5 soak minutes"
+    id: zone_5_soak_min
+    optimistic: true
+    restore_value: true
+    initial_value: 15
+    min_value: 0
+    max_value: 60
+    step: 1
+    unit_of_measurement: "min"
+  - platform: template
+    name: "Zone 6 soak minutes"
+    id: zone_6_soak_min
+    optimistic: true
+    restore_value: true
+    initial_value: 15
+    min_value: 0
+    max_value: 60
+    step: 1
+    unit_of_measurement: "min"
+  - platform: template
+    name: "Zone 7 soak minutes"
+    id: zone_7_soak_min
+    optimistic: true
+    restore_value: true
+    initial_value: 15
+    min_value: 0
+    max_value: 60
+    step: 1
+    unit_of_measurement: "min"
+  - platform: template
+    name: "Zone 8 soak minutes"
+    id: zone_8_soak_min
+    optimistic: true
+    restore_value: true
+    initial_value: 15
+    min_value: 0
+    max_value: 60
+    step: 1
+    unit_of_measurement: "min"
+
+  - platform: template
+    name: "Zone 1 max runtime minutes"
+    id: zone_1_max_runtime_min
+    optimistic: true
+    restore_value: true
+    initial_value: 60
+    min_value: 1
+    max_value: 240
+    step: 1
+    unit_of_measurement: "min"
+  - platform: template
+    name: "Zone 2 max runtime minutes"
+    id: zone_2_max_runtime_min
+    optimistic: true
+    restore_value: true
+    initial_value: 60
+    min_value: 1
+    max_value: 240
+    step: 1
+    unit_of_measurement: "min"
+  - platform: template
+    name: "Zone 3 max runtime minutes"
+    id: zone_3_max_runtime_min
+    optimistic: true
+    restore_value: true
+    initial_value: 60
+    min_value: 1
+    max_value: 240
+    step: 1
+    unit_of_measurement: "min"
+  - platform: template
+    name: "Zone 4 max runtime minutes"
+    id: zone_4_max_runtime_min
+    optimistic: true
+    restore_value: true
+    initial_value: 60
+    min_value: 1
+    max_value: 240
+    step: 1
+    unit_of_measurement: "min"
+  - platform: template
+    name: "Zone 5 max runtime minutes"
+    id: zone_5_max_runtime_min
+    optimistic: true
+    restore_value: true
+    initial_value: 60
+    min_value: 1
+    max_value: 240
+    step: 1
+    unit_of_measurement: "min"
+  - platform: template
+    name: "Zone 6 max runtime minutes"
+    id: zone_6_max_runtime_min
+    optimistic: true
+    restore_value: true
+    initial_value: 60
+    min_value: 1
+    max_value: 240
+    step: 1
+    unit_of_measurement: "min"
+  - platform: template
+    name: "Zone 7 max runtime minutes"
+    id: zone_7_max_runtime_min
+    optimistic: true
+    restore_value: true
+    initial_value: 60
+    min_value: 1
+    max_value: 240
+    step: 1
+    unit_of_measurement: "min"
+  - platform: template
+    name: "Zone 8 max runtime minutes"
+    id: zone_8_max_runtime_min
+    optimistic: true
+    restore_value: true
+    initial_value: 60
+    min_value: 1
+    max_value: 240
+    step: 1
+    unit_of_measurement: "min"
+
+  - platform: template
+    name: "Zone 1 min flow gpm"
+    id: zone_1_min_flow_gpm
+    optimistic: true
+    restore_value: true
+    initial_value: 1.0
+    min_value: 0
+    max_value: 50
+    step: 0.1
+    unit_of_measurement: "gpm"
+  - platform: template
+    name: "Zone 2 min flow gpm"
+    id: zone_2_min_flow_gpm
+    optimistic: true
+    restore_value: true
+    initial_value: 1.0
+    min_value: 0
+    max_value: 50
+    step: 0.1
+    unit_of_measurement: "gpm"
+  - platform: template
+    name: "Zone 3 min flow gpm"
+    id: zone_3_min_flow_gpm
+    optimistic: true
+    restore_value: true
+    initial_value: 1.0
+    min_value: 0
+    max_value: 50
+    step: 0.1
+    unit_of_measurement: "gpm"
+  - platform: template
+    name: "Zone 4 min flow gpm"
+    id: zone_4_min_flow_gpm
+    optimistic: true
+    restore_value: true
+    initial_value: 1.0
+    min_value: 0
+    max_value: 50
+    step: 0.1
+    unit_of_measurement: "gpm"
+  - platform: template
+    name: "Zone 5 min flow gpm"
+    id: zone_5_min_flow_gpm
+    optimistic: true
+    restore_value: true
+    initial_value: 1.0
+    min_value: 0
+    max_value: 50
+    step: 0.1
+    unit_of_measurement: "gpm"
+  - platform: template
+    name: "Zone 6 min flow gpm"
+    id: zone_6_min_flow_gpm
+    optimistic: true
+    restore_value: true
+    initial_value: 1.0
+    min_value: 0
+    max_value: 50
+    step: 0.1
+    unit_of_measurement: "gpm"
+  - platform: template
+    name: "Zone 7 min flow gpm"
+    id: zone_7_min_flow_gpm
+    optimistic: true
+    restore_value: true
+    initial_value: 1.0
+    min_value: 0
+    max_value: 50
+    step: 0.1
+    unit_of_measurement: "gpm"
+  - platform: template
+    name: "Zone 8 min flow gpm"
+    id: zone_8_min_flow_gpm
+    optimistic: true
+    restore_value: true
+    initial_value: 1.0
+    min_value: 0
+    max_value: 50
+    step: 0.1
+    unit_of_measurement: "gpm"
+
+  - platform: template
+    name: "Zone 1 max flow gpm"
+    id: zone_1_max_flow_gpm
+    optimistic: true
+    restore_value: true
+    initial_value: 20.0
+    min_value: 0
+    max_value: 100
+    step: 0.1
+    unit_of_measurement: "gpm"
+  - platform: template
+    name: "Zone 2 max flow gpm"
+    id: zone_2_max_flow_gpm
+    optimistic: true
+    restore_value: true
+    initial_value: 20.0
+    min_value: 0
+    max_value: 100
+    step: 0.1
+    unit_of_measurement: "gpm"
+  - platform: template
+    name: "Zone 3 max flow gpm"
+    id: zone_3_max_flow_gpm
+    optimistic: true
+    restore_value: true
+    initial_value: 20.0
+    min_value: 0
+    max_value: 100
+    step: 0.1
+    unit_of_measurement: "gpm"
+  - platform: template
+    name: "Zone 4 max flow gpm"
+    id: zone_4_max_flow_gpm
+    optimistic: true
+    restore_value: true
+    initial_value: 20.0
+    min_value: 0
+    max_value: 100
+    step: 0.1
+    unit_of_measurement: "gpm"
+  - platform: template
+    name: "Zone 5 max flow gpm"
+    id: zone_5_max_flow_gpm
+    optimistic: true
+    restore_value: true
+    initial_value: 20.0
+    min_value: 0
+    max_value: 100
+    step: 0.1
+    unit_of_measurement: "gpm"
+  - platform: template
+    name: "Zone 6 max flow gpm"
+    id: zone_6_max_flow_gpm
+    optimistic: true
+    restore_value: true
+    initial_value: 20.0
+    min_value: 0
+    max_value: 100
+    step: 0.1
+    unit_of_measurement: "gpm"
+  - platform: template
+    name: "Zone 7 max flow gpm"
+    id: zone_7_max_flow_gpm
+    optimistic: true
+    restore_value: true
+    initial_value: 20.0
+    min_value: 0
+    max_value: 100
+    step: 0.1
+    unit_of_measurement: "gpm"
+  - platform: template
+    name: "Zone 8 max flow gpm"
+    id: zone_8_max_flow_gpm
+    optimistic: true
+    restore_value: true
+    initial_value: 20.0
+    min_value: 0
+    max_value: 100
+    step: 0.1
+    unit_of_measurement: "gpm"
+
+  # --- Sensor calibration ---
+  - platform: template
+    name: "Pulses per gallon"
+    id: pulses_per_gallon
+    optimistic: true
+    restore_value: true
+    initial_value: 10.0      # placeholder; calibrate during cutover (Task 9.2)
+    min_value: 0.1
+    max_value: 1000
+    step: 0.1
+
+  # --- Pressure gates ---
+  - platform: template
+    name: "Pressure static min PSI"
+    id: pressure_static_min_psi
+    optimistic: true
+    restore_value: true
+    initial_value: 30
+    min_value: 0
+    max_value: 200
+    step: 1
+    unit_of_measurement: "psi"
+
+  - platform: template
+    name: "Pressure static max PSI"
+    id: pressure_static_max_psi
+    optimistic: true
+    restore_value: true
+    initial_value: 80
+    min_value: 0
+    max_value: 200
+    step: 1
+    unit_of_measurement: "psi"
+
+  - platform: template
+    name: "Pressure running min PSI"
+    id: pressure_running_min_psi
+    optimistic: true
+    restore_value: true
+    initial_value: 25
+    min_value: 0
+    max_value: 200
+    step: 1
+    unit_of_measurement: "psi"
+
+  - platform: template
+    name: "Pressure high PSI"
+    id: pressure_high_psi
+    optimistic: true
+    restore_value: true
+    initial_value: 90
+    min_value: 0
+    max_value: 200
+    step: 1
+    unit_of_measurement: "psi"
+
+  # --- Flow gates ---
+  - platform: template
+    name: "Phantom flow gpm"
+    id: phantom_flow_gpm
+    optimistic: true
+    restore_value: true
+    initial_value: 0.5
+    min_value: 0
+    max_value: 5
+    step: 0.1
+    unit_of_measurement: "gpm"
+
+  - platform: template
+    name: "No-flow grace seconds"
+    id: no_flow_grace_s
+    optimistic: true
+    restore_value: true
+    initial_value: 60
+    min_value: 5
+    max_value: 600
+    step: 1
+    unit_of_measurement: "s"
+
+  - platform: template
+    name: "High-flow grace seconds"
+    id: high_flow_grace_s
+    optimistic: true
+    restore_value: true
+    initial_value: 30
+    min_value: 5
+    max_value: 600
+    step: 1
+    unit_of_measurement: "s"
+
+  # --- Rain gates ---
+  - platform: template
+    name: "Rain hold hours after sensor"
+    id: rain_hold_hours_after_sensor
+    optimistic: true
+    restore_value: true
+    initial_value: 12
+    min_value: 0
+    max_value: 168
+    step: 1
+    unit_of_measurement: "h"
+
+  - platform: template
+    name: "Rain mm threshold 48h"
+    id: rain_mm_threshold_48h
+    optimistic: true
+    restore_value: true
+    initial_value: 5
+    min_value: 0
+    max_value: 100
+    step: 0.1
+    unit_of_measurement: "mm"
+
+  - platform: template
+    name: "Rain hold hours after forecast"
+    id: rain_hold_hours_after_forecast
+    optimistic: true
+    restore_value: true
+    initial_value: 24
+    min_value: 0
+    max_value: 168
+    step: 1
+    unit_of_measurement: "h"
+
+  - platform: template
+    name: "Rain mm max age hours"
+    id: rain_mm_max_age_hours
+    optimistic: true
+    restore_value: true
+    initial_value: 12
+    min_value: 1
+    max_value: 168
+    step: 1
+    unit_of_measurement: "h"
+
+  - platform: template
+    name: "Rain mm last 48h"          # HA-pushable
+    id: rain_mm_last_48h
+    optimistic: true
+    restore_value: false
+    initial_value: 0
+    min_value: 0
+    max_value: 500
+    step: 0.1
+    unit_of_measurement: "mm"
+    on_value:
+      - lambda: |-
+          // Stamp the push timestamp so the device can detect stale data.
+          if (id(time_synced).state) {
+            id(rain_mm_last_pushed_epoch).publish_state(id(ha_time).now().timestamp);
+          }
+
+  # --- Retry ---
+  - platform: template
+    name: "Retry count"
+    id: retry_count
+    optimistic: true
+    restore_value: true
+    initial_value: 1
+    min_value: 0
+    max_value: 5
+    step: 1
+
+  - platform: template
+    name: "Retry delay seconds"
+    id: retry_delay_s
+    optimistic: true
+    restore_value: true
+    initial_value: 60
+    min_value: 5
+    max_value: 600
+    step: 1
+    unit_of_measurement: "s"
+
+  # --- Catch-up ---
+  - platform: template
+    name: "Catch-up window hours"
+    id: catchup_window_hours
+    optimistic: true
+    restore_value: true
+    initial_value: 6
+    min_value: 0
+    max_value: 48
+    step: 1
+    unit_of_measurement: "h"
+
+  # --- Sequencing ---
+  - platform: template
+    name: "Inter-zone delay seconds"
+    id: inter_zone_delay_s
+    optimistic: true
+    restore_value: true
+    initial_value: 2
+    min_value: 0
+    max_value: 60
+    step: 1
+    unit_of_measurement: "s"
+
+  # --- Schedule start time (split because ESPHome has no `time` number entity) ---
+  - platform: template
+    name: "Schedule start hour"
+    id: schedule_start_hour
+    optimistic: true
+    restore_value: true
+    initial_value: 6
+    min_value: 0
+    max_value: 23
+    step: 1
+
+  - platform: template
+    name: "Schedule start minute"
+    id: schedule_start_minute
+    optimistic: true
+    restore_value: true
+    initial_value: 0
+    min_value: 0
+    max_value: 59
+    step: 1
+
+  # Internal: timestamp of the last `rain_mm_last_48h` write. Used by the
+  # pre-flight gate's TTL check so stale weather data fails open.
+  - platform: template
+    name: "Last rain mm push (epoch s)"
+    id: rain_mm_last_pushed_epoch
+    optimistic: true
+    restore_value: false
+    initial_value: 0
+    min_value: 0
+    max_value: 4000000000
+    step: 1
+    internal: true
+
+  - platform: template
+    name: "Zones enabled bitmask"      # which of zones 1..8 are enabled (bit 0 = zone 1)
+    id: zones_enabled_bitmask
+    optimistic: true
+    restore_value: true
+    initial_value: 15      # 0b00001111 = zones 1..4 enabled by default
+    min_value: 0
+    max_value: 255
+    step: 1
+
+# Schedule day-of-week mask: 7 booleans (Sun..Sat). True = run that day.
+switch:
+  - platform: template
+    name: "Schedule Sunday"
+    id: sched_sun
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_OFF
+  - platform: template
+    name: "Schedule Monday"
+    id: sched_mon
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_OFF
+  - platform: template
+    name: "Schedule Tuesday"
+    id: sched_tue
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+  - platform: template
+    name: "Schedule Wednesday"
+    id: sched_wed
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_OFF
+  - platform: template
+    name: "Schedule Thursday"
+    id: sched_thu
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_OFF
+  - platform: template
+    name: "Schedule Friday"
+    id: sched_fri
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_OFF
+  - platform: template
+    name: "Schedule Saturday"
+    id: sched_sat
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+
+  - platform: template
+    name: "Fallback schedule enabled"
+    id: fallback_schedule_enabled
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+
+  - platform: template
+    name: "High pressure cancels run"
+    id: high_pressure_cancels_run
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_OFF
