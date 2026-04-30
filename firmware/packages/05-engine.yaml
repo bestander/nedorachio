@@ -296,6 +296,85 @@ script:
             ESP_LOGI("engine", "Zone %d completed (%.1f min)", id(run_zone_id), id(run_minutes_done));
           }
 
+  # Retry-aware wrapper. After a flow/pressure cancel, waits retry_delay_s,
+  # re-runs pre-flight, restarts the same zone from the beginning. Rain/user
+  # cancels do not retry.
+  - id: run_one_zone_with_retry
+    mode: single
+    parameters:
+      zone_id: int
+      total_min: float
+      cycle_min: float
+      soak_min: float
+    then:
+      - lambda: |-
+          id(retries_used_this_zone) = 0;
+      - while:
+          condition:
+            lambda: 'return true;'   # break via script.stop
+          then:
+            - script.execute:
+                id: run_one_zone
+                zone_id: !lambda 'return zone_id;'
+                total_min: !lambda 'return total_min;'
+                cycle_min: !lambda 'return cycle_min;'
+                soak_min: !lambda 'return soak_min;'
+            - wait_until:
+                not:
+                  script.is_running: run_one_zone
+            - if:
+                condition:
+                  lambda: |-
+                    return !id(run_cancel_requested) ||
+                           id(run_cancel_cause) == "rain";
+                then:
+                  - lambda: |-
+                      ESP_LOGI("retry", "Zone %d done; not retrying.", zone_id);
+                  - script.stop: run_one_zone_with_retry
+            - if:
+                condition:
+                  lambda: |-
+                    return id(run_cancel_cause) != "no_flow" &&
+                           id(run_cancel_cause) != "high_flow" &&
+                           id(run_cancel_cause) != "low_pressure" &&
+                           id(run_cancel_cause) != "high_pressure";
+                then:
+                  - lambda: |-
+                      ESP_LOGI("retry", "Zone %d cancelled by %s; not eligible for retry.",
+                        zone_id, id(run_cancel_cause).c_str());
+                  - script.stop: run_one_zone_with_retry
+            - if:
+                condition:
+                  lambda: 'return id(retries_used_this_zone) >= (int)id(retry_count).state;'
+                then:
+                  - lambda: |-
+                      ESP_LOGW("retry", "Zone %d retries exhausted (%d used). Latching fault.",
+                        zone_id, id(retries_used_this_zone));
+                      id(any_alarm_latched) = true;
+                  - script.stop: run_one_zone_with_retry
+            - lambda: |-
+                ESP_LOGW("retry", "Zone %d cancelled by %s; retrying after %ds (attempt %d/%d).",
+                  zone_id, id(run_cancel_cause).c_str(),
+                  (int)id(retry_delay_s).state,
+                  id(retries_used_this_zone) + 1,
+                  (int)id(retry_count).state);
+                id(retries_used_this_zone) += 1;
+            - delay: !lambda 'return (uint32_t)(id(retry_delay_s).state * 1000.0f);'
+            - script.execute:
+                id: run_pre_flight
+                is_schedule: false
+            - wait_until:
+                not:
+                  script.is_running: run_pre_flight
+            - if:
+                condition:
+                  lambda: 'return !id(pre_flight_passed);'
+                then:
+                  - lambda: |-
+                      ESP_LOGW("retry", "Pre-flight failed before retry: %s. Latching fault.",
+                        id(pre_flight_reason).c_str());
+                  - script.stop: run_one_zone_with_retry
+
 interval:
   - interval: 1s
     then:
@@ -407,3 +486,4 @@ interval:
             id(run_cancel_requested) = true;
             id(run_cancel_cause) = "rain";
           }
+
