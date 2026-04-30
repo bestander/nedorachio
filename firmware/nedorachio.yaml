@@ -16,3 +16,4 @@ packages:
   zones: !include packages/02-zones.yaml
   sensors: !include packages/03-sensors.yaml
   tunables: !include packages/04-tunables.yaml
+  engine: !include packages/05-engine.yaml

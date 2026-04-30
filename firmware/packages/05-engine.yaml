@@ -1,0 +1,161 @@
+# Engine: pre-flight gates, cycle-and-soak, mid-run cancels, retry, sequencing.
+
+globals:
+  - id: pre_flight_passed
+    type: bool
+    restore_value: false
+    initial_value: 'false'
+  - id: pre_flight_reason
+    type: std::string
+    restore_value: false
+    initial_value: '""'
+
+  # Last time the rain sensor was wet, epoch seconds.
+  - id: rain_sensor_last_wet_epoch
+    type: uint32_t
+    restore_value: true
+    initial_value: '0'
+
+  # Last time the rain forecast was over threshold, epoch seconds.
+  - id: rain_forecast_last_high_epoch
+    type: uint32_t
+    restore_value: true
+    initial_value: '0'
+
+  # Whether any alarm is latched. Cleared by `clear_fault`.
+  - id: any_alarm_latched
+    type: bool
+    restore_value: true
+    initial_value: 'false'
+
+binary_sensor:
+  - platform: template
+    name: "Alarm: pre-flight failed"
+    id: alarm_pre_flight_failed
+    device_class: problem
+
+button:
+  - platform: template
+    name: "Clear fault"
+    id: clear_fault
+    on_press:
+      - lambda: |-
+          id(any_alarm_latched) = false;
+      - binary_sensor.template.publish: { id: alarm_pre_flight_failed, state: false }
+      - binary_sensor.template.publish: { id: alarm_runtime_exceeded, state: false }
+      # Other alarms (no_flow, high_flow, phantom_flow, low/high pressure) are
+      # added in Task 4.3 and reset here as well.
+
+script:
+  - id: run_pre_flight
+    mode: single
+    parameters:
+      is_schedule: bool   # true = called from the fallback schedule (extra gates apply)
+    then:
+      - lambda: |-
+          id(pre_flight_passed) = true;
+          id(pre_flight_reason) = "";
+      # 1. master_enable
+      - if:
+          condition:
+            switch.is_off: master_enable
+          then:
+            - lambda: |-
+                id(pre_flight_passed) = false;
+                id(pre_flight_reason) = "master_enable_off";
+      # 2. emergency stop latched
+      - if:
+          condition:
+            switch.is_on: emergency_stop_latched
+          then:
+            - lambda: |-
+                id(pre_flight_passed) = false;
+                id(pre_flight_reason) = "emergency_stop_latched";
+      # 3. time_synced
+      - if:
+          condition:
+            binary_sensor.is_off: time_synced
+          then:
+            - lambda: |-
+                id(pre_flight_passed) = false;
+                id(pre_flight_reason) = "time_not_synced";
+      # 4. rain sensor dry + hold
+      - lambda: |-
+          if (id(rain_sensor).state) {
+            id(pre_flight_passed) = false;
+            id(pre_flight_reason) = "rain_sensor_wet";
+          } else {
+            uint32_t now_epoch = id(ha_time).now().timestamp;
+            uint32_t hold_s = (uint32_t)(id(rain_hold_hours_after_sensor).state * 3600.0f);
+            if (id(rain_sensor_last_wet_epoch) > 0 &&
+                now_epoch - id(rain_sensor_last_wet_epoch) < hold_s) {
+              id(pre_flight_passed) = false;
+              id(pre_flight_reason) = "rain_hold_after_sensor";
+            }
+          }
+      # 5. rain forecast (with TTL → fail-open if stale)
+      - lambda: |-
+          uint32_t now_epoch = id(ha_time).now().timestamp;
+          uint32_t ttl_s = (uint32_t)(id(rain_mm_max_age_hours).state * 3600.0f);
+          float effective_mm = id(rain_mm_last_48h).state;
+          uint32_t pushed = (uint32_t)id(rain_mm_last_pushed_epoch).state;
+          if (pushed == 0 || now_epoch - pushed > ttl_s) {
+            effective_mm = 0.0f;   // stale → fail-open
+          }
+          if (effective_mm > id(rain_mm_threshold_48h).state) {
+            id(pre_flight_passed) = false;
+            id(pre_flight_reason) = "rain_forecast_high";
+            id(rain_forecast_last_high_epoch) = now_epoch;
+          } else {
+            uint32_t hold_s = (uint32_t)(id(rain_hold_hours_after_forecast).state * 3600.0f);
+            if (id(rain_forecast_last_high_epoch) > 0 &&
+                now_epoch - id(rain_forecast_last_high_epoch) < hold_s) {
+              id(pre_flight_passed) = false;
+              id(pre_flight_reason) = "rain_forecast_hold";
+            }
+          }
+      # 6. static-pressure gate (only meaningful when no zone is on)
+      - if:
+          condition:
+            lambda: 'return id(currently_on_zone) == 0;'
+          then:
+            - delay: 1s   # let any noise settle
+            - lambda: |-
+                float p = id(pressure_psi).state;
+                if (p < id(pressure_static_min_psi).state) {
+                  id(pre_flight_passed) = false;
+                  id(pre_flight_reason) = "pressure_too_low";
+                } else if (p > id(pressure_static_max_psi).state) {
+                  id(pre_flight_passed) = false;
+                  id(pre_flight_reason) = "pressure_too_high";
+                }
+      # 7. schedule-only gate: fallback_schedule_enabled
+      - if:
+          condition:
+            and:
+              - lambda: 'return is_schedule;'
+              - switch.is_off: fallback_schedule_enabled
+          then:
+            - lambda: |-
+                id(pre_flight_passed) = false;
+                id(pre_flight_reason) = "schedule_disabled";
+      # 8. no alarm latched
+      - if:
+          condition:
+            lambda: 'return id(any_alarm_latched);'
+          then:
+            - lambda: |-
+                id(pre_flight_passed) = false;
+                id(pre_flight_reason) = "alarm_latched";
+      # publish the alarm if failed
+      - if:
+          condition:
+            lambda: 'return !id(pre_flight_passed);'
+          then:
+            - binary_sensor.template.publish: { id: alarm_pre_flight_failed, state: true }
+            - lambda: |-
+                id(any_alarm_latched) = true;
+                ESP_LOGW("preflight", "FAIL: %s", id(pre_flight_reason).c_str());
+          else:
+            - lambda: |-
+                ESP_LOGI("preflight", "PASS");

@@ -16,8 +16,11 @@ binary_sensor:
     device_class: moisture
     filters:
       - delayed_on_off: 500ms
-    # NOTE: `on_press` to stamp `rain_sensor_last_wet_epoch` is added in Phase 4.1
-    # once that global exists in 05-engine.yaml.
+    on_press:
+      - lambda: |-
+          if (id(time_synced).state) {
+            id(rain_sensor_last_wet_epoch) = id(ha_time).now().timestamp;
+          }
 
 sensor:
   # Flow meter: pulses + smoothed rate.
