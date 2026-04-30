@@ -350,9 +350,11 @@ nedorachio/
 - Mobile push grouping and quiet hours for alarms.
 - OTA firmware artifact stored in Home Assistant for re-flash without dev tools.
 - Persisting runtime state (current zone, accumulated minutes) across power loss if the deployment ever requires it.
+- **Local physical controls.** External momentary buttons wired to free GPIOs for "start/stop zone N" and "emergency stop", so the controller is usable without a phone. The on-board BOOT button (GPIO0) may be reusable as a single programmable button (subject to the GPIO0-must-be-HIGH-at-reset constraint); any additional buttons need to be added via free GPIOs and pulled HIGH by internal pull-ups. ESPHome wiring is straightforward (`binary_sensor: gpio` with `on_press:` triggering the same scripts that the HA buttons call).
 
 ## 13. Open issues to resolve during planning
 
 - Exact GPIO assignment for relays, rain, flow, and pressure ADC. Determined on the bench; constraints documented in §6.3.
 - Final flow-meter pulses-per-gallon calibration — published spec is approximate; one-time bench calibration against a known volume.
 - Pressure transducer recalibration check after migration to confirm the existing linear calibration still holds with the new wiring.
+- On unboxing, inspect the board for any user buttons beyond BOOT/EN. If extras are present and on free GPIOs, note them — they may shorten the "local physical controls" roadmap item.
