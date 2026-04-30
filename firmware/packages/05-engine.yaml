@@ -71,6 +71,26 @@ binary_sensor:
     name: "Alarm: pre-flight failed"
     id: alarm_pre_flight_failed
     device_class: problem
+  - platform: template
+    name: "Alarm: no flow"
+    id: alarm_no_flow
+    device_class: problem
+  - platform: template
+    name: "Alarm: high flow"
+    id: alarm_high_flow
+    device_class: problem
+  - platform: template
+    name: "Alarm: phantom flow"
+    id: alarm_phantom_flow
+    device_class: problem
+  - platform: template
+    name: "Alarm: low pressure"
+    id: alarm_low_pressure
+    device_class: problem
+  - platform: template
+    name: "Alarm: high pressure"
+    id: alarm_high_pressure
+    device_class: problem
 
 button:
   - platform: template
@@ -81,8 +101,11 @@ button:
           id(any_alarm_latched) = false;
       - binary_sensor.template.publish: { id: alarm_pre_flight_failed, state: false }
       - binary_sensor.template.publish: { id: alarm_runtime_exceeded, state: false }
-      # Other alarms (no_flow, high_flow, phantom_flow, low/high pressure) are
-      # added in Task 4.3 and reset here as well.
+      - binary_sensor.template.publish: { id: alarm_no_flow, state: false }
+      - binary_sensor.template.publish: { id: alarm_high_flow, state: false }
+      - binary_sensor.template.publish: { id: alarm_phantom_flow, state: false }
+      - binary_sensor.template.publish: { id: alarm_low_pressure, state: false }
+      - binary_sensor.template.publish: { id: alarm_high_pressure, state: false }
 
 script:
   - id: run_pre_flight
@@ -271,4 +294,116 @@ script:
               id(run_minutes_done), id(run_total_min));
           } else {
             ESP_LOGI("engine", "Zone %d completed (%.1f min)", id(run_zone_id), id(run_minutes_done));
+          }
+
+interval:
+  - interval: 1s
+    then:
+      - lambda: |-
+          // Phantom flow: armed whenever no zone is on (including soaking).
+          static uint32_t phantom_first_seen_ms = 0;
+          float gpm = id(flow_rate_gpm).state;
+          if (id(currently_on_zone) == 0 && gpm > id(phantom_flow_gpm).state) {
+            if (phantom_first_seen_ms == 0) phantom_first_seen_ms = millis();
+            if (millis() - phantom_first_seen_ms > 5UL * 60UL * 1000UL) {
+              id(alarm_phantom_flow).publish_state(true);
+              id(any_alarm_latched) = true;
+            }
+          } else {
+            phantom_first_seen_ms = 0;
+          }
+
+          // Mid-run cancel checks: only when a zone is on AND a run is active.
+          if (id(run_zone_id) == 0 || id(currently_on_zone) == 0) return;
+
+          static uint32_t high_flow_first_ms = 0;
+          static uint32_t low_psi_first_ms = 0;
+          static uint32_t high_psi_first_ms = 0;
+          uint32_t now_ms = millis();
+          uint32_t since_zone_start_ms = now_ms - id(zone_started_at_ms);
+
+          // No-flow (after grace period).
+          if (since_zone_start_ms >= (uint32_t)(id(no_flow_grace_s).state * 1000)) {
+            float min_gpm = 1.0f;
+            switch (id(currently_on_zone)) {
+              case 1: min_gpm = id(zone_1_min_flow_gpm).state; break;
+              case 2: min_gpm = id(zone_2_min_flow_gpm).state; break;
+              case 3: min_gpm = id(zone_3_min_flow_gpm).state; break;
+              case 4: min_gpm = id(zone_4_min_flow_gpm).state; break;
+              case 5: min_gpm = id(zone_5_min_flow_gpm).state; break;
+              case 6: min_gpm = id(zone_6_min_flow_gpm).state; break;
+              case 7: min_gpm = id(zone_7_min_flow_gpm).state; break;
+              case 8: min_gpm = id(zone_8_min_flow_gpm).state; break;
+            }
+            if (gpm < min_gpm) {
+              id(alarm_no_flow).publish_state(true);
+              id(any_alarm_latched) = true;
+              id(run_cancel_requested) = true;
+              id(run_cancel_cause) = "no_flow";
+            }
+          }
+
+          // High flow (sustained for grace_s).
+          float max_gpm = 100.0f;
+          switch (id(currently_on_zone)) {
+            case 1: max_gpm = id(zone_1_max_flow_gpm).state; break;
+            case 2: max_gpm = id(zone_2_max_flow_gpm).state; break;
+            case 3: max_gpm = id(zone_3_max_flow_gpm).state; break;
+            case 4: max_gpm = id(zone_4_max_flow_gpm).state; break;
+            case 5: max_gpm = id(zone_5_max_flow_gpm).state; break;
+            case 6: max_gpm = id(zone_6_max_flow_gpm).state; break;
+            case 7: max_gpm = id(zone_7_max_flow_gpm).state; break;
+            case 8: max_gpm = id(zone_8_max_flow_gpm).state; break;
+          }
+          if (gpm > max_gpm) {
+            if (high_flow_first_ms == 0) high_flow_first_ms = now_ms;
+            if (now_ms - high_flow_first_ms >= (uint32_t)(id(high_flow_grace_s).state * 1000)) {
+              id(alarm_high_flow).publish_state(true);
+              id(any_alarm_latched) = true;
+              id(run_cancel_requested) = true;
+              id(run_cancel_cause) = "high_flow";
+              high_flow_first_ms = 0;
+            }
+          } else {
+            high_flow_first_ms = 0;
+          }
+
+          // Low pressure (after 30s, sustained 5s).
+          float p = id(pressure_psi).state;
+          if (since_zone_start_ms >= 30 * 1000) {
+            if (p < id(pressure_running_min_psi).state) {
+              if (low_psi_first_ms == 0) low_psi_first_ms = now_ms;
+              if (now_ms - low_psi_first_ms >= 5 * 1000) {
+                id(alarm_low_pressure).publish_state(true);
+                id(any_alarm_latched) = true;
+                id(run_cancel_requested) = true;
+                id(run_cancel_cause) = "low_pressure";
+                low_psi_first_ms = 0;
+              }
+            } else {
+              low_psi_first_ms = 0;
+            }
+          }
+
+          // High pressure (sustained 10s); cancel only iff `high_pressure_cancels_run`.
+          if (p > id(pressure_high_psi).state) {
+            if (high_psi_first_ms == 0) high_psi_first_ms = now_ms;
+            if (now_ms - high_psi_first_ms >= 10 * 1000) {
+              id(alarm_high_pressure).publish_state(true);
+              id(any_alarm_latched) = true;
+              if (id(high_pressure_cancels_run).state) {
+                id(run_cancel_requested) = true;
+                id(run_cancel_cause) = "high_pressure";
+              }
+              high_psi_first_ms = 0;
+            }
+          } else {
+            high_psi_first_ms = 0;
+          }
+
+          // Rain sensor wet → cancel (no retry; cause noted for retry policy).
+          if (id(rain_sensor).state) {
+            id(rain_sensor_last_wet_epoch) = id(ha_time).now().timestamp;
+            id(run_cancel_requested) = true;
+            id(run_cancel_cause) = "rain";
           }
