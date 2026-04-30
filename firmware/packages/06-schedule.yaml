@@ -1,0 +1,90 @@
+# Weekly schedule fire + skip + catch-up + plan readouts.
+
+globals:
+  - id: skip_next_run_pending
+    type: bool
+    restore_value: true
+    initial_value: 'false'
+  - id: last_run_started_epoch
+    type: uint32_t
+    restore_value: true
+    initial_value: '0'
+  - id: last_fire_epoch
+    type: uint32_t
+    restore_value: true
+    initial_value: '0'
+
+button:
+  - platform: template
+    name: "Skip next run"
+    id: skip_next_run
+    icon: mdi:skip-next-circle
+    on_press:
+      - lambda: |-
+          id(skip_next_run_pending) = true;
+          ESP_LOGI("schedule", "Next run will be skipped.");
+
+# Fire every 30s; check whether this is a scheduled fire time.
+interval:
+  - interval: 30s
+    then:
+      - lambda: |-
+          if (!id(time_synced).state) return;
+          if (!id(fallback_schedule_enabled).state) return;
+
+          auto now = id(ha_time).now();
+          if (!now.is_valid()) return;
+
+          int target_h = (int)id(schedule_start_hour).state;
+          int target_m = (int)id(schedule_start_minute).state;
+          if (now.hour != target_h || now.minute != target_m) return;
+
+          // Day-of-week: ESPHome uses 1=Sunday..7=Saturday.
+          bool day_match = false;
+          switch (now.day_of_week) {
+            case 1: day_match = id(sched_sun).state; break;
+            case 2: day_match = id(sched_mon).state; break;
+            case 3: day_match = id(sched_tue).state; break;
+            case 4: day_match = id(sched_wed).state; break;
+            case 5: day_match = id(sched_thu).state; break;
+            case 6: day_match = id(sched_fri).state; break;
+            case 7: day_match = id(sched_sat).state; break;
+          }
+          if (!day_match) return;
+
+          uint32_t now_epoch = now.timestamp;
+          if (id(last_fire_epoch) > 0 && now_epoch - id(last_fire_epoch) < 60) return;
+          id(last_fire_epoch) = now_epoch;
+
+          if (id(skip_next_run_pending)) {
+            id(skip_next_run_pending) = false;
+            ESP_LOGI("schedule", "Skip flag consumed; not firing this run.");
+            return;
+          }
+          if (id(currently_on_zone) != 0) {
+            ESP_LOGI("schedule", "Zone already on; fallback aborted.");
+            return;
+          }
+
+          // Defer to ESPHome script execution outside the lambda.
+          id(schedule_should_fire).publish_state(true);
+
+binary_sensor:
+  - platform: template
+    name: "Schedule fire pending"
+    id: schedule_should_fire
+    internal: true
+    on_press:
+      - script.execute: schedule_fire_handler
+
+script:
+  - id: schedule_fire_handler
+    mode: single
+    then:
+      - script.execute:
+          id: run_full_cycle
+          is_schedule: true
+      - wait_until:
+          not:
+            script.is_running: run_full_cycle
+      - binary_sensor.template.publish: { id: schedule_should_fire, state: false }
