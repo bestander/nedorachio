@@ -1,0 +1,52 @@
+# WiFi, ESPHome API (HA connection), OTA, time sources, and core status sensors.
+
+logger:
+  level: INFO
+  baud_rate: 115200
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: "${device_name} fallback"
+    password: !secret ota_password
+
+captive_portal:
+
+api:
+  encryption:
+    key: !secret api_encryption_key
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+# Two time sources; whichever syncs first wins.
+# NOTE: catch-up trigger added in Phase 5.2 once `maybe_catch_up` script exists.
+time:
+  - platform: homeassistant
+    id: ha_time
+    on_time_sync:
+      - lambda: |-
+          id(time_synced).publish_state(true);
+  - platform: sntp
+    id: sntp_time
+    servers:
+      - 0.pool.ntp.org
+      - 1.pool.ntp.org
+      - 2.pool.ntp.org
+    on_time_sync:
+      - lambda: |-
+          id(time_synced).publish_state(true);
+
+binary_sensor:
+  - platform: template
+    name: "Time synced"
+    id: time_synced
+    device_class: connectivity
+    icon: mdi:clock-check
+
+  - platform: status
+    name: "Controller online"
+    id: controller_online
+    device_class: connectivity
