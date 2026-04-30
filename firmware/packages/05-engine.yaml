@@ -28,6 +28,44 @@ globals:
     restore_value: true
     initial_value: 'false'
 
+  # --- Per-run state (cycle-and-soak engine) ---
+  - id: run_total_min
+    type: float
+    restore_value: false
+    initial_value: '0'
+  - id: run_cycle_min
+    type: float
+    restore_value: false
+    initial_value: '0'
+  - id: run_soak_min
+    type: float
+    restore_value: false
+    initial_value: '0'
+  - id: run_zone_id
+    type: int
+    restore_value: false
+    initial_value: '0'
+  - id: run_minutes_done
+    type: float
+    restore_value: false
+    initial_value: '0'
+  - id: run_cancel_requested
+    type: bool
+    restore_value: false
+    initial_value: 'false'
+  - id: run_cancel_cause
+    type: std::string
+    restore_value: false
+    initial_value: '""'
+  - id: retries_used_this_zone
+    type: int
+    restore_value: false
+    initial_value: '0'
+  - id: run_phase_seconds_left
+    type: int
+    restore_value: false
+    initial_value: '0'
+
 binary_sensor:
   - platform: template
     name: "Alarm: pre-flight failed"
@@ -159,3 +197,78 @@ script:
           else:
             - lambda: |-
                 ESP_LOGI("preflight", "PASS");
+
+  - id: run_one_zone
+    mode: single
+    parameters:
+      zone_id: int
+      total_min: float
+      cycle_min: float
+      soak_min: float
+    then:
+      - lambda: |-
+          id(run_zone_id) = zone_id;
+          id(run_total_min) = total_min;
+          id(run_cycle_min) = cycle_min;
+          id(run_soak_min) = soak_min;
+          id(run_minutes_done) = 0.0f;
+          id(run_cancel_requested) = false;
+          id(run_cancel_cause) = "";
+          id(retries_used_this_zone) = 0;
+      - while:
+          condition:
+            lambda: |-
+              return id(run_minutes_done) < id(run_total_min)
+                  && !id(run_cancel_requested);
+          then:
+            # ---- RUNNING phase ----
+            - script.execute:
+                id: drive_zone
+                zone_id: !lambda 'return id(run_zone_id);'
+                state: !lambda 'return true;'
+            - lambda: |-
+                ESP_LOGI("engine", "Zone %d running for %.1f min (done %.1f / %.1f)",
+                  id(run_zone_id), id(run_cycle_min),
+                  id(run_minutes_done), id(run_total_min));
+            - lambda: |-
+                id(run_phase_seconds_left) = (int)(id(run_cycle_min) * 60.0f);
+            # Tick once per second; exit early on cancel so the post-while
+            # cleanup (drive_zone OFF + log) still runs.
+            - while:
+                condition:
+                  lambda: |-
+                    return id(run_phase_seconds_left) > 0
+                        && !id(run_cancel_requested);
+                then:
+                  - delay: 1s
+                  - lambda: |-
+                      id(run_phase_seconds_left) -= 1;
+                      id(run_minutes_done) += 1.0f / 60.0f;
+            # ---- SOAK phase (skip if total reached or cancelled) ----
+            - if:
+                condition:
+                  lambda: |-
+                    return id(run_minutes_done) < id(run_total_min) &&
+                           id(run_soak_min) > 0 &&
+                           !id(run_cancel_requested);
+                then:
+                  - script.execute:
+                      id: drive_zone
+                      zone_id: !lambda 'return id(run_zone_id);'
+                      state: !lambda 'return false;'
+                  - lambda: |-
+                      ESP_LOGI("engine", "Zone %d soaking for %.1f min", id(run_zone_id), id(run_soak_min));
+                  - delay: !lambda 'return (uint32_t)(id(run_soak_min) * 60.0f * 1000.0f);'
+      # ---- finally ----
+      - script.execute:
+          id: drive_zone
+          zone_id: !lambda 'return id(run_zone_id);'
+          state: !lambda 'return false;'
+      - lambda: |-
+          if (id(run_cancel_requested)) {
+            ESP_LOGW("engine", "Zone %d cancelled (cause: %s, %.1f / %.1f min done)",
+              id(run_zone_id), id(run_cancel_cause).c_str(),
+              id(run_minutes_done), id(run_total_min));
+          } else {
+            ESP_LOGI("engine", "Zone %d completed (%.1f min)", id(run_zone_id), id(run_minutes_done));
+          }
