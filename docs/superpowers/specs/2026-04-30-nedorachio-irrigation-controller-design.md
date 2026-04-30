@@ -13,9 +13,9 @@ Replace a Rachio sprinkler controller with an off-the-shelf 8-relay ESP32-WROOM-
 - Replace Rachio for 4 active sprinkler zones (controller has headroom for up to 8).
 - Expose every relay as an HA switch over the encrypted ESPHome native API.
 - Prevent water hammer with on-device interlocks: at most one zone on at a time, plus a configurable inter-zone close→open delay.
-- Run a simple autonomous schedule on the device (sequential zones with cycle-and-soak) so a Home Assistant outage does not stop watering.
-- Let Home Assistant cancel and replace any planned run with its own (richer) cycle-and-soak script driven by sensors and weather forecast.
-- Integrate a rain sensor, a pulse flow meter, and the existing pressure transducer; expose all of them to Home Assistant; alarm and shut off on the failure modes described in §6.
+- Run a fully autonomous weekly schedule on the device (sequential zones with cycle-and-soak), with all logic — pre-flight gates, mid-run cancels, retries, rain hold, catch-up — in firmware. The system continues working when Home Assistant is unreachable.
+- Let Home Assistant feed weather forecast data (`rain_mm_last_48h`) to the device, surface device state on a dashboard, route alarm notifications, and trigger manual / scheduled runs remotely. HA does not own irrigation logic.
+- Integrate a rain sensor, a pulse flow meter, and the existing pressure transducer; expose all of them to Home Assistant; alarm, cancel, and retry on the failure modes described in §9.
 - Keep the configuration version-controlled: ESPHome firmware YAML and the Home Assistant package YAML both live in this repo.
 
 ## 3. Non-goals
@@ -40,12 +40,12 @@ Replace a Rachio sprinkler controller with an off-the-shelf 8-relay ESP32-WROOM-
 ```
                               ┌────────────────────────────────────────┐
                               │            Home Assistant              │
-                              │  ─ helpers (input_*)                   │
-                              │  ─ scripts (cycle-and-soak, run zone)  │
-                              │  ─ automations (rain, flow, pressure,  │
-                              │     schedule fire, takeover handshake) │
-                              │  ─ dashboard (Lovelace view)           │
-                              │  ─ utility_meter for per-zone gallons  │
+                              │  ─ Weather feeder → rain_mm_last_48h   │
+                              │  ─ Notification routes (alarm rising   │
+                              │     edges from device)                 │
+                              │  ─ Dashboard (Lovelace, vanilla cards) │
+                              │  ─ Time source (ESPHome `homeassistant`│
+                              │     time pulled by device)             │
                               └──────────────┬─────────────────────────┘
                                              │ ESPHome native API (TLS, encrypted)
                               ┌──────────────┴─────────────────────────┐
@@ -56,8 +56,12 @@ Replace a Rachio sprinkler controller with an off-the-shelf 8-relay ESP32-WROOM-
                               │  ─ Flow pulse counter + GPM            │
                               │  ─ Pressure ADC + linear calibration   │
                               │  ─ Safety: 1-zone-max, inter-zone gap, │
-                              │     per-zone runtime cap, HA watchdog  │
-                              │  ─ Fallback weekly schedule with C&S   │
+                              │     per-zone runtime cap               │
+                              │  ─ Cycle-and-soak engine               │
+                              │  ─ Pre-flight gates (PSI, rain, fault) │
+                              │  ─ Mid-run cancels + retry policy      │
+                              │  ─ Weekly schedule + catch-up on boot  │
+                              │  ─ Persisted stats & plan readouts     │
                               │  ─ Tunable parameters as HA entities   │
                               └──────────────┬─────────────────────────┘
                                              │
@@ -69,10 +73,14 @@ Replace a Rachio sprinkler controller with an off-the-shelf 8-relay ESP32-WROOM-
 
 ### 5.2 Responsibility split
 
-- **On the device (firmware):** relay control, sensor reading and calibration, safety interlocks, fallback weekly schedule with cycle-and-soak, exposing every parameter as a Home Assistant entity for tuning.
-- **In Home Assistant:** rich scheduling, sensor-driven overrides (weather forecast, pressure thresholds, flow alarms), per-zone water totals, dashboards, notifications, persisted long-term history.
+The device owns *all* irrigation logic: scheduling, cycle-and-soak, safety interlocks, sensor-driven cancels, retries, rain hold, catch-up, and watering statistics. Home Assistant is reduced to:
 
-The device must remain useful when Home Assistant is unreachable; Home Assistant must be able to cancel and replace any planned device-side run when present.
+- A **weather feeder** that pushes one number to the device — millimeters of rain in the last 48 hours — derived from a built-in HA weather entity.
+- A **time source** via ESPHome's `time: homeassistant` integration (free, automatic), with a public-NTP `sntp` source as a secondary fallback.
+- A **remote control surface** (manual zone run, trigger schedule, skip next, emergency stop) that calls device entities.
+- A **dashboard** that reads device sensors (PSI, flow, plan, stats) and a **notification router** that fires off device alarm binary sensors.
+
+The device must run the full irrigation cycle — including all alarms and retries — even when Home Assistant is unreachable. The only HA-derived value the device *needs* to make decisions is `rain_mm_last_48h`; if HA never pushes it (or pushes stale), the device falls back to the rain sensor and pressure-gate alone, no forecast skip.
 
 ## 6. Hardware and wiring
 
@@ -104,124 +112,219 @@ The 8-relay board's relay-channel GPIO assignment is fixed by board layout and i
 
 ### 7.1 Entities exposed to Home Assistant
 
-- `switch.zone_1` … `switch.zone_8` — one per relay. Turning one ON in HA goes through the safety layer; the relay is not driven directly by the switch state.
+**Zone control:**
+- `switch.zone_1` … `switch.zone_8` — one per relay. Turning one ON goes through the safety layer; the relay is not driven directly by the switch state.
+- `button.run_now_zone_N` — kick off a single-zone cycle-and-soak run for zone N using its configured `total_min` / `cycle_min` / `soak_min`. Same pre-flight gates apply.
+- `button.run_full_cycle` — kick off the full sequential cycle (all enabled zones).
+- `button.emergency_stop_all` — forces every zone off immediately and clears any pending retries.
+- `button.skip_next_run` — vetoes only the next fallback fire (persisted in flash).
+- `switch.fallback_schedule_enabled` — global enable for the on-device schedule.
+- `switch.master_enable` — global "irrigation allowed" toggle. When OFF, no schedule fires and no manual run starts; running zones are aborted.
+- `button.clear_fault` — clears latched per-zone fault state (after a retry-exhausted cancel).
+
+**Sensors (live):**
 - `binary_sensor.rain_sensor` — current wet/dry, polarity configurable.
-- `sensor.flow_pulses_total` — monotonically increasing pulse count. HA derives gallons.
+- `sensor.flow_pulses_total` — monotonically increasing pulse count.
 - `sensor.flow_rate_gpm` — instantaneous flow rate, smoothed.
 - `sensor.pressure_psi` — calibrated PSI, linear from voltage divider.
-- `binary_sensor.controller_online` — heartbeat / availability for HA automations.
-- `binary_sensor.time_synced` — true once NTP has synced at least once since boot.
-- `binary_sensor.zone_runtime_exceeded` — pulses true when a per-zone runtime cap is hit.
-- `button.emergency_stop_all` — forces every zone off immediately.
-- `button.skip_next_run` — vetoes only the next fallback fire (persisted in flash).
-- `button.run_now` — kicks off the on-device cycle-and-soak full cycle immediately.
-- `switch.fallback_schedule_enabled` — global enable for the on-device schedule.
-- `sensor.next_planned_run` — timestamp of the next planned fallback fire.
+- `binary_sensor.controller_online` — heartbeat / availability.
+- `binary_sensor.time_synced` — true once a time source has synced at least once since boot.
 
-### 7.2 Tunable parameters (exposed as `number` / `select` / `time` entities)
+**Plan readout (sensors):**
+- `sensor.current_phase` — `idle` / `pre_flight` / `running` / `soaking` / `inter_zone_delay` / `fault`.
+- `sensor.currently_running_zone` — zone number, or 0 if idle.
+- `sensor.current_phase_remaining_s` — seconds left in the current phase.
+- `sensor.run_progress_pct` — 0–100 across the full cycle.
+- `sensor.next_planned_run` — timestamp of the next fallback fire.
+- `sensor.last_run_started_at` / `sensor.last_run_finished_at` — timestamps.
+- `sensor.last_run_outcome` — `completed` / `cancelled_rain` / `cancelled_flow` / `cancelled_pressure` / `cancelled_user` / `pre_flight_failed`.
 
-Persisted in flash, editable from HA without re-flashing:
+**Stats (sensors, persisted in flash):**
+- Per zone: `sensor.zone_N_run_count_total`, `sensor.zone_N_gallons_total`, `sensor.zone_N_seconds_total`, `sensor.zone_N_last_gallons`, `sensor.zone_N_last_duration_s`, `sensor.zone_N_last_run_at`.
+- Today / this month: `sensor.gallons_today`, `sensor.gallons_this_month`, `sensor.runs_today`, `sensor.runs_this_month`. Daily/monthly counters reset on the first event after midnight / month rollover.
 
-- Per zone: total minutes, cycle minutes, soak minutes, hard maximum runtime cap.
-- Pulses-per-gallon for the flow meter.
-- Pressure calibration points (voltage → PSI linear interpolation).
-- Inter-zone close→open delay (default 2s).
-- HA-watchdog timeout (default 120s).
-- Fallback schedule: days-of-week mask (default Tue + Sat), start time (default 06:00 local).
+**Alarms (binary sensors — for HA notifications):**
+- `binary_sensor.alarm_no_flow`, `binary_sensor.alarm_high_flow`, `binary_sensor.alarm_phantom_flow`, `binary_sensor.alarm_low_pressure`, `binary_sensor.alarm_high_pressure`, `binary_sensor.alarm_pre_flight_failed`, `binary_sensor.alarm_runtime_exceeded`. Each latches on detection and clears on `button.clear_fault` or on the next successful run start (where applicable).
 
-### 7.3 Safety invariants (enforced in firmware regardless of HA state)
+**HA-driven inputs (number / button):**
+- `number.rain_mm_last_48h` — pushed by HA from the weather entity. Default 0 if never written.
+- All tunable parameters in §7.2.
 
-1. **At most one zone ON at a time.** A request to turn zone N on while zone M is on first turns M off and waits the inter-zone delay before turning N on.
-2. **Inter-zone close→open delay.** Default 2s, configurable. Ensures pressure settles before the next valve opens.
-3. **Per-zone hard maximum runtime.** Default 60 minutes, configurable. On exceedance, the zone is shut off and `binary_sensor.zone_runtime_exceeded` fires.
-4. **HA heartbeat watchdog.** If the native API connection has been down for longer than the watchdog timeout while any zone is ON, all zones are shut off.
-5. **Boot-safe state.** On boot, every relay is forced OFF before WiFi/HA connect. No glitch can leave a zone ON across boot.
+### 7.2 Tunable parameters (exposed as `number` / `select` / `time` / `switch` entities)
 
-These invariants apply to *every* path that drives a zone — the HA switch, the on-device fallback schedule, and the `run_now` button.
+Persisted in flash, editable from HA without re-flashing.
 
-### 7.4 Fallback weekly schedule
+**Per-zone:**
+- `total_min`, `cycle_min`, `soak_min`, `max_runtime_min` (hard cap).
+- `min_flow_gpm`, `max_flow_gpm` — alarm bounds during run.
 
-- Triggered by ESPHome's `time:` cron action on the configured days/start time.
-- Pre-fire guard: if any zone switch is currently ON, the fallback aborts (HA is already watering). This avoids HA-vs-fallback collisions.
-- Pre-fire guard: if `binary_sensor.time_synced` has never been true since boot, the fallback does not fire.
-- Pre-fire guard: if `switch.fallback_schedule_enabled` is OFF, the fallback does not fire.
-- Pre-fire guard: if `button.skip_next_run` was pressed since the last fire, the fallback consumes the skip and does not fire this time.
-- On fire: iterate enabled zones in order; for each, run cycle-and-soak (run for `cycle_min`, off for `soak_min`, repeat until `total_min` accumulated), honoring the inter-zone delay between zones.
-- Each iteration re-checks the master enable and emergency-stop state; either flipping mid-run aborts the remaining iterations cleanly.
+**Sensor calibration:**
+- `pulses_per_gallon` (flow meter).
+- Pressure linear-calibration points (voltage → PSI).
 
-### 7.5 Time source
+**Pressure gates (new):**
+- `pressure_static_min_psi` — pre-flight floor (no schedule starts below this with no zone running).
+- `pressure_static_max_psi` — pre-flight ceiling.
+- `pressure_running_min_psi` — mid-run floor (low-pressure cancel).
+- `pressure_high_psi` — high-pressure alarm threshold.
+- `high_pressure_cancels_run` (switch) — if ON, high-pressure fires `cancel_all`; default OFF (notify-only).
 
-- NTP via WiFi only.
-- ESPHome's free-running clock holds across transient WiFi loss; on cold boot the device waits for first NTP sync before arming the fallback (`binary_sensor.time_synced` gates it).
-- Power loss is explicitly out of scope: when it happens, the device boots, waits for NTP, then resumes — no fallback fires until time is known.
+**Flow gates:**
+- `phantom_flow_gpm` — threshold for the phantom-flow alarm when no zone is on.
+- `no_flow_grace_s` — how long after zone-on before the no-flow check arms (default 60s).
+- `high_flow_grace_s` — how long the high-flow condition must hold (default 30s).
+
+**Rain gates (new):**
+- `rain_hold_hours_after_sensor` — minimum hold after the rain sensor goes dry (default 12h).
+- `rain_mm_threshold_48h` — threshold above which `rain_mm_last_48h` blocks scheduled runs.
+- `rain_hold_hours_after_forecast` — how long the forecast-based block lasts after the value drops below threshold (default 24h).
+- `rain_mm_max_age_hours` — TTL on the HA-pushed value (default 12h). If HA hasn't refreshed `rain_mm_last_48h` within this window, the device treats it as 0 (fail-open). Prevents an offline HA from indefinitely blocking watering.
+
+**Retry (new):**
+- `retry_count` — max auto-retries after a flow/pressure cancel (default 1).
+- `retry_delay_s` — seconds between cancel and retry (default 60).
+
+**Catch-up (new):**
+- `catchup_window_hours` — if a fallback fire was missed within the last N hours, run it on next boot/NTP sync (default 6, 0 disables).
+
+**Sequencing & safety:**
+- `inter_zone_delay_s` (default 2).
+
+**Schedule:**
+- Days-of-week (7 booleans, default Tue + Sat).
+- Start time (default 06:00 local).
+
+### 7.3 Hard safety invariants (always enforced)
+
+1. **At most one zone ON at a time.** A request to turn zone N on while zone M is on first turns M off and waits the inter-zone delay.
+2. **Inter-zone close→open delay.** Configurable; ensures pressure settles before the next valve opens.
+3. **Per-zone hard runtime cap.** On exceedance, zone is shut off, `alarm_runtime_exceeded` latches, the run is marked `cancelled_user`-equivalent (no retry).
+4. **Boot-safe state.** On boot, every relay is forced OFF before WiFi connects.
+5. **`master_enable` OFF or `emergency_stop_all` pressed** aborts everything immediately.
+
+These apply to every code path that touches a relay — fallback schedule, `run_now_zone_N`, `run_full_cycle`, manual `switch.zone_N`.
+
+### 7.4 Pre-flight gates (checked before any run starts)
+
+A "run" here means either a scheduled fallback fire, `run_full_cycle`, or `run_now_zone_N`. Each gate, if it fails, sets `last_run_outcome = pre_flight_failed`, latches `alarm_pre_flight_failed`, and aborts. Gates evaluated in order:
+
+1. `master_enable` is ON.
+2. `time_synced` is true.
+3. Rain sensor is dry, AND the rain-sensor hold has expired (`now − last_wet_at >= rain_hold_hours_after_sensor`).
+4. Forecast hold: `rain_mm_last_48h <= rain_mm_threshold_48h` (treating values older than `rain_mm_max_age_hours` as 0), AND if it was previously above threshold, the forecast hold has expired.
+5. Static-pressure gate: `pressure_static_min_psi <= pressure_psi <= pressure_static_max_psi` with no zone running. Brief settle delay before reading.
+6. No alarm is currently latched (or, if `clear_fault` was just pressed, latches are clear).
+
+For a fallback fire only, additionally:
+
+7. `fallback_schedule_enabled` is ON.
+8. `skip_next_run` was not pressed since the last fire (otherwise it consumes the skip and aborts cleanly without latching `pre_flight_failed`).
+
+### 7.5 Cycle-and-soak engine
+
+- Iterates enabled zones in order. For each: alternate "running" (relay ON for `cycle_min`) and "soaking" (relay OFF for `soak_min`) phases until the accumulated running time reaches `total_min`. Inserts `inter_zone_delay_s` between zones.
+- During every running phase: tick the flow / pressure cancel checks (§7.6). During soaking and inter-zone phases: skip flow checks (no zone is on); pressure is observed but doesn't cancel (no run in progress for that zone).
+- `current_phase`, `currently_running_zone`, `current_phase_remaining_s`, `run_progress_pct` are updated continuously.
+- On any cancel: stop the relay, evaluate retry policy (§7.7).
+- Successful zone completion increments stats counters and updates `zone_N_*` sensors.
+
+### 7.6 Mid-run cancel rules
+
+Evaluated on a 1-second tick during running phases:
+
+- **No-flow:** zone running for ≥ `no_flow_grace_s`, `flow_rate_gpm < zone_N_min_flow_gpm` → cancel with cause `flow`.
+- **High-flow:** `flow_rate_gpm > zone_N_max_flow_gpm` continuously for ≥ `high_flow_grace_s` → cancel with cause `flow`.
+- **Low-pressure:** zone running for ≥ 30s, `pressure_psi < pressure_running_min_psi` → cancel with cause `pressure`.
+- **High-pressure:** `pressure_psi > pressure_high_psi` for ≥ 10s → latch `alarm_high_pressure`; if `high_pressure_cancels_run` is ON, cancel with cause `pressure`.
+- **Phantom flow** (always armed when no zone is on, including soaking phases): `flow_rate_gpm > phantom_flow_gpm` for ≥ 5 minutes → latch `alarm_phantom_flow`. Notify-only (nothing to cancel).
+- **Rain wet:** rain sensor goes wet mid-run → cancel with cause `rain` (no retry, no resume — see Q7).
+
+### 7.7 Retry and fault latching
+
+When a run is cancelled with cause `flow` or `pressure`:
+
+1. Turn the zone off, hold for `retry_delay_s`.
+2. If `retries_used_this_run < retry_count`: re-arm pre-flight gates (§7.4); if they pass, restart the *current* zone from the beginning of its cycle-and-soak (not the whole cycle). Increment `retries_used_this_run`.
+3. If retries are exhausted: latch the corresponding alarm, set `last_run_outcome` accordingly, abort the remainder of the cycle (do not move on to subsequent zones — operator should investigate), set `current_phase = fault`. Cleared by `clear_fault` or by the next manual run that passes pre-flight.
+
+Cancels caused by `rain` or by `master_enable` / `emergency_stop_all` do not retry.
+
+### 7.8 Catch-up on boot
+
+After a boot completes and `time_synced` becomes true:
+
+- Look up the most recent scheduled fire time within the last `catchup_window_hours`.
+- If there is one and `last_run_started_at` is older than that fire time (the fire was missed, not already executed), evaluate pre-flight gates and, if they pass, start the cycle now.
+- If `catchup_window_hours` is 0, this is disabled.
+- Only the *most recent* missed fire is caught up — never multiple back-to-back runs.
+
+### 7.9 Time sources
+
+- Primary: ESPHome `time: homeassistant` (HA pushes time when connected).
+- Fallback: ESPHome `time: sntp` against a public NTP pool when the HA push is stale or unavailable.
+- `time_synced` is true once either source has produced a sync since boot.
+- Free-running clock holds across transient WiFi/HA loss.
+- Power loss is out of scope: device boots, waits for sync, then arms (and may run catch-up if §7.8 applies).
 
 ## 8. Home Assistant configuration
 
-The HA configuration ships as a single Home Assistant Package YAML so it is version-controlled with the firmware.
+HA owns no irrigation logic. The package is just a thin layer that feeds weather data to the device, surfaces device state on a dashboard, and routes alarm notifications. Ships as a single HA Package YAML in `homeassistant/packages/nedorachio.yaml`.
 
-### 8.1 Helpers (`input_*`)
+### 8.1 Weather feeder (the one automation that matters)
 
-- Per zone (×4 active): `input_number.zone_N_duration_min`, `input_boolean.zone_N_enabled`, `input_text.zone_N_name`, `input_number.zone_N_cycle_min`, `input_number.zone_N_soak_min`, `input_number.zone_N_min_flow_gpm`, `input_number.zone_N_max_flow_gpm`.
-- Rain hold: `input_number.rain_hold_hours` (default 12), `input_datetime.rain_last_wet_at` (auto-stamped).
-- Phantom flow threshold: `input_number.phantom_flow_gpm` (default 0.5).
-- Pressure thresholds: `input_number.pressure_low_running_psi`, `input_number.pressure_high_psi`, `input_boolean.high_pressure_cancels_run` (default off — notify-only).
-- Forecast skip: `input_number.forecast_rain_skip_mm` (default 5), `input_number.forecast_window_hours` (default 12).
-- Master switches: `input_boolean.irrigation_master_enable`, `input_boolean.let_ha_take_over`.
+A single automation, fired every 10 minutes, computes "millimeters of rain in the last 48 hours" from the configured weather entity (uses HA's `weather.get_forecasts` service plus the recorder for past observed precipitation, or a more direct sensor if one is exposed) and writes it to the device's `number.rain_mm_last_48h`. If the weather entity is unavailable, the automation skips (the device retains the last value or zero); operationally this means a stale forecast can't accidentally block irrigation forever — operator can also override `number.rain_mm_last_48h` directly from the dashboard.
 
-### 8.2 Scripts
+### 8.2 Time push
 
-- `script.run_zone_with_cycle_soak(zone_id, total_min, cycle_min, soak_min)` — looped on/off until total accumulated. Honors `irrigation_master_enable` and rain hold each iteration; aborts cleanly on rain trip.
-- `script.run_full_cycle` — runs `run_zone_with_cycle_soak` for each enabled zone in sequence. The HA-side equivalent of a fallback run, woven with sensor checks.
-- `script.cancel_all` — turns every zone off immediately; called by alarms and the "stop" dashboard button.
+ESPHome's `time: homeassistant` source pulls time from HA automatically once connected — no automation required. The package documents nothing here; it is set up entirely on the firmware side (§7.9).
 
-### 8.3 Automations
+### 8.3 Notification routes
 
-- **Rain wet:** rain sensor goes wet → `script.cancel_all`, stamp `rain_last_wet_at`. (Q7 leg B.)
-- **Schedule fire (HA-driven schedules):** at each user-defined fire time → check `irrigation_master_enable`; rain hold (`now - rain_last_wet_at >= rain_hold_hours`); forecast skip (built-in HA weather entity says > `forecast_rain_skip_mm` of rain in the next `forecast_window_hours`); pressure within bounds → either call `script.run_full_cycle` or skip. (Q7 leg A.)
-- **HA-takeover handshake:** when `let_ha_take_over` flips ON → press `button.skip_next_run` on the device; when OFF → no action (fallback runs normally).
-- **No-flow alarm:** zone ON for > 60s with `flow_rate_gpm < zone_N_min_flow_gpm` → `script.cancel_all`, notify.
-- **High-flow alarm:** `flow_rate_gpm > zone_N_max_flow_gpm` for > 30s → `script.cancel_all`, notify.
-- **Phantom-flow alarm:** no zone ON, `flow_rate_gpm > phantom_flow_gpm` for > 5 minutes → notify (no zone to cancel).
-- **Low-pressure during run:** zone ON for > 30s, `pressure_psi < pressure_low_running_psi` → `script.cancel_all`, notify.
-- **High-pressure:** `pressure_psi > pressure_high_psi` for > 10s → notify; if `high_pressure_cancels_run` is on, also `script.cancel_all`.
-- **Per-zone gallon totals:** `utility_meter` integration sourced from `flow_pulses_total`, gated by which zone is active. Daily and monthly cycles per zone.
+One automation per device alarm binary sensor (no_flow, high_flow, phantom_flow, low_pressure, high_pressure, pre_flight_failed, runtime_exceeded). Each fires a notification (mobile push or whatever the user configures) on the alarm's rising edge with a short message including the affected zone (when applicable) and the latest sensor values. No cancel actions — the device has already cancelled.
 
 ### 8.4 Dashboard
 
-A single Lovelace view, vanilla cards only:
+Single Lovelace view, vanilla cards only:
 
-- Master toggle, "let HA take over" toggle, emergency stop button.
-- Last-run summary (which zones ran, gallons, duration).
-- Next planned run (from `sensor.next_planned_run`).
-- Per-zone tile: enabled toggle, duration spinner, "run now" button, last-run gallons.
-- Live tiles: rain wet/dry, flow GPM, pressure PSI.
-- Recent alarms feed.
+- **Top row:** master enable toggle, fallback schedule enable toggle, emergency stop button, "skip next run" button, "clear fault" button.
+- **Status:** `current_phase`, `currently_running_zone`, `current_phase_remaining_s`, `run_progress_pct`, `next_planned_run`, `last_run_outcome`.
+- **Per-zone tiles (×4):** name, enabled toggle, total/cycle/soak number entries, "run now" button, last-run gallons + duration, lifetime gallons + run count, latest min/max flow setpoints.
+- **Live sensors:** rain wet/dry, flow GPM, pressure PSI, today's gallons, this month's gallons.
+- **Alarms feed:** state of every `alarm_*` binary sensor with timestamp.
+- **Tuning panel (collapsed by default):** all calibration & threshold `number` entities from §7.2 grouped logically.
+
+### 8.5 What HA does *not* do
+
+For clarity (and to bound implementation scope), HA does not run cycle-and-soak, does not orchestrate retries, does not enforce rain hold, does not gate pre-flight, does not maintain stats. Every one of those is on-device. HA only feeds weather and surfaces state.
 
 ## 9. Failure modes and mitigations
 
 | Failure | Detection | Mitigation |
 |---|---|---|
-| Stuck HA automation leaves zone on | Per-zone runtime cap (firmware) | Zone shut off, `zone_runtime_exceeded` fires |
-| HA crashes mid-run | Native API watchdog (firmware) | All zones shut off after watchdog timeout |
-| WiFi outage mid-run | Same as above (HA unreachable from device) | Same as above; fallback runs at next scheduled day |
-| Two zones commanded on simultaneously | Single-zone invariant (firmware) | Earlier zone closed, inter-zone delay, then new zone opens |
-| Rachio-style runoff | Cycle-and-soak (both fallback and HA paths) | Run/soak cycles |
-| Burst pipe / popped head | High-flow alarm (HA) | `cancel_all`, notify |
-| Closed manual valve, broken solenoid | No-flow alarm (HA) | `cancel_all`, notify |
-| Leak with no zone running | Phantom-flow alarm (HA) | Notify |
-| Supply failure during run | Low-pressure alarm (HA) | `cancel_all`, notify |
-| Over-pressurized line | High-pressure alarm (HA) | Notify, optional `cancel_all` |
-| Rain during a run | Rain wet automation + 12h hold | `cancel_all`, no resume |
-| Cold boot without ever syncing NTP | `time_synced` gate (firmware) | Fallback does not fire until time is known |
-| Power loss | Boot-safe relay state (firmware) | All relays OFF on boot, wait for NTP, resume fallback |
-| Consolidated single point of failure | Accepted tradeoff (Q5) | On-device safety + HA-side alarms compensate |
+| Stuck zone (any cause) | Per-zone runtime cap (firmware §7.3) | Zone shut off, `alarm_runtime_exceeded` latches |
+| HA / WiFi outage mid-run | Device runs autonomously (firmware §5.2) | Run continues uninterrupted; sensor cancels still active |
+| Two zones commanded on simultaneously | Single-zone invariant (firmware §7.3) | Earlier zone closed, inter-zone delay, then new zone opens |
+| Rachio-style runoff | Cycle-and-soak (firmware §7.5) | Run/soak cycles per zone |
+| Supply failure before a run | Pre-flight static-pressure gate (firmware §7.4) | Run aborts before any zone opens, `alarm_pre_flight_failed` latches |
+| Burst pipe / popped head | High-flow cancel (firmware §7.6) | Zone cancelled, retry once, then fault latch |
+| Closed manual valve, broken solenoid | No-flow cancel (firmware §7.6) | Zone cancelled, retry once, then fault latch |
+| Leak with no zone running | Phantom-flow alarm (firmware §7.6) | `alarm_phantom_flow` latches; HA notifies; nothing to cancel |
+| Supply failure during run | Low-pressure cancel (firmware §7.6) | Zone cancelled, retry once, then fault latch |
+| Over-pressurized line | High-pressure alarm (firmware §7.6) | Latches alarm; cancels run if `high_pressure_cancels_run` is ON |
+| Transient pressure dip | Retry policy (firmware §7.7) | One auto-retry after `retry_delay_s` |
+| Rain during a run | Rain-sensor cancel (firmware §7.6) | Zone aborted; no retry, no resume; rain hold engages |
+| Heavy recent rainfall (forecast) | `rain_mm_last_48h` pre-flight (firmware §7.4) | Schedule fire blocked; forecast hold engages |
+| Cold boot without ever syncing time | `time_synced` gate (firmware §7.4 / §7.9) | Fallback does not fire until time is known |
+| Missed fire across reboot | Catch-up logic (firmware §7.8) | Most recent missed fire within window runs once |
+| Power loss | Boot-safe relay state (firmware §7.3) | All relays OFF on boot, wait for sync, resume |
+| Consolidated single point of failure | Accepted tradeoff (Q5) | On-device safety + alarm latches + retries compensate |
 
 ## 10. Testing strategy
 
-- **Bench testing (firmware).** Drive relays with LEDs or audible click before any 24VAC is connected. Verify each safety invariant explicitly: command two zones simultaneously, exceed the runtime cap, kill HA mid-run (disconnect API), boot with WiFi off, boot with WiFi on but no NTP, invoke `skip_next_run` and verify exactly one fire is consumed.
-- **HA package testing.** Develop the package against a HA dev instance using simulated entities that mirror the device's. Trigger each automation by setting state manually; verify alarm thresholds and rain hold math.
-- **Integration testing indoors.** Connect the real board to LEDs and one test 24VAC valve. Run a full simulated week of fallback fires plus several HA overrides, plus simulated rain trips and forced flow / pressure faults.
-- **Field cutover.** Swap Rachio out on a weekend morning. Observe one full fallback run end-to-end, then a full HA-driven run with the takeover handshake. Verify per-zone water totals match expectations against a known reference (bucket test on one head).
+- **Bench testing (firmware).** Drive relays with LEDs or audible click before any 24VAC is connected. Verify each safety invariant and pre-flight gate explicitly: command two zones simultaneously; exceed the runtime cap; force `master_enable` OFF mid-run; toggle the rain sensor mid-run; force `pressure_psi` outside static bounds at pre-flight; force `flow_rate_gpm` outside running bounds and verify exactly one retry then fault latch; force `flow_rate_gpm > 0` with no zone on and verify the phantom alarm; press `skip_next_run` and verify exactly one fire is consumed; reboot during a run and verify catch-up runs at most once.
+- **HA package testing.** Run the package on a HA dev instance pointed at the device. Verify the weather-feeder writes `number.rain_mm_last_48h` and that pushing a value above threshold blocks pre-flight. Verify alarm-binary-sensor → notification routes fire on rising edge.
+- **Integration testing indoors.** Connect the real board to LEDs and one test 24VAC valve. Run a simulated full week of fallback fires plus several manual fires, plus simulated rain trips and forced flow / pressure faults end-to-end.
+- **Field cutover.** Swap Rachio out on a weekend morning. Observe one full fallback run end-to-end, then a `run_full_cycle` triggered manually. Verify per-zone gallon totals against a known reference (bucket test on one head) to lock in `pulses_per_gallon` and the per-zone flow alarm bounds.
 
 ## 11. Deliverables and repo layout
 
