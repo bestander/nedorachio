@@ -1,0 +1,15 @@
+substitutions:
+  device_name: nedorachio
+  friendly_name: Nedorachio Irrigation Controller
+
+esphome:
+  name: ${device_name}
+  friendly_name: ${friendly_name}
+
+esp32:
+  board: esp32dev
+  framework:
+    type: arduino
+
+# Packages will be added one by one as the implementation progresses.
+packages: {}

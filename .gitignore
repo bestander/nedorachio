@@ -1,0 +1,7 @@
+firmware/secrets.yaml
+firmware/.esphome/
+firmware/.pioenvs/
+firmware/.piolibdeps/
+firmware/build/
+.DS_Store
+*.swp
