@@ -1,0 +1,62 @@
+# Rain (binary), flow (pulse), pressure (ADC + linear calibration).
+#
+# Replace the placeholder GPIOs and the calibration constants with real values
+# captured during bench prep (see plan Tasks 1.1, 1.2).
+
+binary_sensor:
+  - platform: gpio
+    pin:
+      number: GPIO27
+      mode:
+        input: true
+        pullup: true
+      inverted: true   # rain sensor closes-on-wet pulls GPIO low
+    name: "Rain sensor"
+    id: rain_sensor
+    device_class: moisture
+    filters:
+      - delayed_on_off: 500ms
+    # NOTE: `on_press` to stamp `rain_sensor_last_wet_epoch` is added in Phase 4.1
+    # once that global exists in 05-engine.yaml.
+
+sensor:
+  # Flow meter: pulses + smoothed rate.
+  - platform: pulse_meter
+    name: "Flow rate"
+    id: flow_rate_gpm
+    pin:
+      number: GPIO26
+      mode:
+        input: true
+        pullup: true
+    unit_of_measurement: "gpm"
+    accuracy_decimals: 2
+    timeout: 30s
+    filters:
+      # Temporary: 1 pulse = 1 gallon. Phase 3.1 wires this to `pulses_per_gallon`.
+      - lambda: 'return x;'
+    total:
+      name: "Flow pulses total"
+      id: flow_pulses_total
+      unit_of_measurement: "pulses"
+      accuracy_decimals: 0
+
+  # Pressure: ADC1 → divider midpoint → PSI.
+  - platform: adc
+    pin: GPIO34       # ADC1 (32-39); input-only on this WROOM board
+    name: "Pressure"
+    id: pressure_psi
+    update_interval: 1s
+    attenuation: 11db
+    accuracy_decimals: 1
+    unit_of_measurement: "psi"
+    filters:
+      - sliding_window_moving_average:
+          window_size: 5
+          send_every: 1
+      # Linear calibration: replace with the bench-measured points (Task 1.2).
+      # The voltage here is the *divider midpoint* voltage (≈ V_transducer / 3
+      # given the 20kΩ + 10kΩ divider carried over from the ESP32-C3 device).
+      - calibrate_linear:
+          - 0.167 -> 0.0    # 0.5V at transducer = 0 PSI; placeholder
+          - 1.500 -> 100.0  # 4.5V at transducer = 100 PSI; placeholder
