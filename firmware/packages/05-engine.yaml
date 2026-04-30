@@ -66,6 +66,24 @@ globals:
     restore_value: false
     initial_value: '0'
 
+  # --- Full-cycle iteration state ---
+  - id: cycle_zone_cursor
+    type: int
+    restore_value: false
+    initial_value: '0'
+  - id: staged_total_min
+    type: float
+    restore_value: false
+    initial_value: '0'
+  - id: staged_cycle_min
+    type: float
+    restore_value: false
+    initial_value: '0'
+  - id: staged_soak_min
+    type: float
+    restore_value: false
+    initial_value: '0'
+
 binary_sensor:
   - platform: template
     name: "Alarm: pre-flight failed"
@@ -106,6 +124,95 @@ button:
       - binary_sensor.template.publish: { id: alarm_phantom_flow, state: false }
       - binary_sensor.template.publish: { id: alarm_low_pressure, state: false }
       - binary_sensor.template.publish: { id: alarm_high_pressure, state: false }
+
+  - platform: template
+    name: "Run now zone 1"
+    id: run_now_zone_1
+    on_press:
+      - script.execute:
+          id: run_one_zone_with_retry
+          zone_id: 1
+          total_min: !lambda 'return id(zone_1_total_min).state;'
+          cycle_min: !lambda 'return id(zone_1_cycle_min).state;'
+          soak_min: !lambda 'return id(zone_1_soak_min).state;'
+  - platform: template
+    name: "Run now zone 2"
+    id: run_now_zone_2
+    on_press:
+      - script.execute:
+          id: run_one_zone_with_retry
+          zone_id: 2
+          total_min: !lambda 'return id(zone_2_total_min).state;'
+          cycle_min: !lambda 'return id(zone_2_cycle_min).state;'
+          soak_min: !lambda 'return id(zone_2_soak_min).state;'
+  - platform: template
+    name: "Run now zone 3"
+    id: run_now_zone_3
+    on_press:
+      - script.execute:
+          id: run_one_zone_with_retry
+          zone_id: 3
+          total_min: !lambda 'return id(zone_3_total_min).state;'
+          cycle_min: !lambda 'return id(zone_3_cycle_min).state;'
+          soak_min: !lambda 'return id(zone_3_soak_min).state;'
+  - platform: template
+    name: "Run now zone 4"
+    id: run_now_zone_4
+    on_press:
+      - script.execute:
+          id: run_one_zone_with_retry
+          zone_id: 4
+          total_min: !lambda 'return id(zone_4_total_min).state;'
+          cycle_min: !lambda 'return id(zone_4_cycle_min).state;'
+          soak_min: !lambda 'return id(zone_4_soak_min).state;'
+  - platform: template
+    name: "Run now zone 5"
+    id: run_now_zone_5
+    on_press:
+      - script.execute:
+          id: run_one_zone_with_retry
+          zone_id: 5
+          total_min: !lambda 'return id(zone_5_total_min).state;'
+          cycle_min: !lambda 'return id(zone_5_cycle_min).state;'
+          soak_min: !lambda 'return id(zone_5_soak_min).state;'
+  - platform: template
+    name: "Run now zone 6"
+    id: run_now_zone_6
+    on_press:
+      - script.execute:
+          id: run_one_zone_with_retry
+          zone_id: 6
+          total_min: !lambda 'return id(zone_6_total_min).state;'
+          cycle_min: !lambda 'return id(zone_6_cycle_min).state;'
+          soak_min: !lambda 'return id(zone_6_soak_min).state;'
+  - platform: template
+    name: "Run now zone 7"
+    id: run_now_zone_7
+    on_press:
+      - script.execute:
+          id: run_one_zone_with_retry
+          zone_id: 7
+          total_min: !lambda 'return id(zone_7_total_min).state;'
+          cycle_min: !lambda 'return id(zone_7_cycle_min).state;'
+          soak_min: !lambda 'return id(zone_7_soak_min).state;'
+  - platform: template
+    name: "Run now zone 8"
+    id: run_now_zone_8
+    on_press:
+      - script.execute:
+          id: run_one_zone_with_retry
+          zone_id: 8
+          total_min: !lambda 'return id(zone_8_total_min).state;'
+          cycle_min: !lambda 'return id(zone_8_cycle_min).state;'
+          soak_min: !lambda 'return id(zone_8_soak_min).state;'
+
+  - platform: template
+    name: "Run full cycle"
+    id: run_full_cycle_btn
+    on_press:
+      - script.execute:
+          id: run_full_cycle
+          is_schedule: false
 
 script:
   - id: run_pre_flight
@@ -374,6 +481,105 @@ script:
                       ESP_LOGW("retry", "Pre-flight failed before retry: %s. Latching fault.",
                         id(pre_flight_reason).c_str());
                   - script.stop: run_one_zone_with_retry
+
+  # Full cycle: iterate zones 1..8, run each through retry-aware runner if
+  # enabled in the bitmask. Stop the cycle if any zone latches a fault.
+  - id: run_full_cycle
+    mode: single
+    parameters:
+      is_schedule: bool
+    then:
+      - script.execute:
+          id: run_pre_flight
+          is_schedule: !lambda 'return is_schedule;'
+      - wait_until:
+          not:
+            script.is_running: run_pre_flight
+      - if:
+          condition:
+            lambda: 'return !id(pre_flight_passed);'
+          then:
+            - logger.log: "Full cycle aborted: pre-flight failed."
+            - script.stop: run_full_cycle
+      - lambda: |-
+          ESP_LOGI("cycle", "Starting full cycle (is_schedule=%d).", is_schedule);
+          id(cycle_zone_cursor) = 0;
+      - while:
+          condition:
+            lambda: 'return id(cycle_zone_cursor) < 8;'
+          then:
+            - lambda: |-
+                id(cycle_zone_cursor) += 1;   // now 1..8
+            - if:
+                condition:
+                  lambda: |-
+                    int zid = id(cycle_zone_cursor);
+                    int mask = (int)id(zones_enabled_bitmask).state;
+                    return ((mask >> (zid - 1)) & 0x1) != 0;
+                then:
+                  - lambda: |-
+                      // Stage parameters into per-run globals so the called
+                      // script reads them deterministically.
+                      int zid = id(cycle_zone_cursor);
+                      switch (zid) {
+                        case 1:
+                          id(staged_total_min) = id(zone_1_total_min).state;
+                          id(staged_cycle_min) = id(zone_1_cycle_min).state;
+                          id(staged_soak_min)  = id(zone_1_soak_min).state;
+                          break;
+                        case 2:
+                          id(staged_total_min) = id(zone_2_total_min).state;
+                          id(staged_cycle_min) = id(zone_2_cycle_min).state;
+                          id(staged_soak_min)  = id(zone_2_soak_min).state;
+                          break;
+                        case 3:
+                          id(staged_total_min) = id(zone_3_total_min).state;
+                          id(staged_cycle_min) = id(zone_3_cycle_min).state;
+                          id(staged_soak_min)  = id(zone_3_soak_min).state;
+                          break;
+                        case 4:
+                          id(staged_total_min) = id(zone_4_total_min).state;
+                          id(staged_cycle_min) = id(zone_4_cycle_min).state;
+                          id(staged_soak_min)  = id(zone_4_soak_min).state;
+                          break;
+                        case 5:
+                          id(staged_total_min) = id(zone_5_total_min).state;
+                          id(staged_cycle_min) = id(zone_5_cycle_min).state;
+                          id(staged_soak_min)  = id(zone_5_soak_min).state;
+                          break;
+                        case 6:
+                          id(staged_total_min) = id(zone_6_total_min).state;
+                          id(staged_cycle_min) = id(zone_6_cycle_min).state;
+                          id(staged_soak_min)  = id(zone_6_soak_min).state;
+                          break;
+                        case 7:
+                          id(staged_total_min) = id(zone_7_total_min).state;
+                          id(staged_cycle_min) = id(zone_7_cycle_min).state;
+                          id(staged_soak_min)  = id(zone_7_soak_min).state;
+                          break;
+                        case 8:
+                          id(staged_total_min) = id(zone_8_total_min).state;
+                          id(staged_cycle_min) = id(zone_8_cycle_min).state;
+                          id(staged_soak_min)  = id(zone_8_soak_min).state;
+                          break;
+                      }
+                  - script.execute:
+                      id: run_one_zone_with_retry
+                      zone_id: !lambda 'return id(cycle_zone_cursor);'
+                      total_min: !lambda 'return id(staged_total_min);'
+                      cycle_min: !lambda 'return id(staged_cycle_min);'
+                      soak_min:  !lambda 'return id(staged_soak_min);'
+                  - wait_until:
+                      not:
+                        script.is_running: run_one_zone_with_retry
+                  # If the zone latched a fault, stop the whole cycle.
+                  - if:
+                      condition:
+                        lambda: 'return id(any_alarm_latched);'
+                      then:
+                        - logger.log: "Full cycle stopped: fault latched."
+                        - script.stop: run_full_cycle
+      - lambda: 'ESP_LOGI("cycle", "Full cycle completed.");'
 
 interval:
   - interval: 1s
