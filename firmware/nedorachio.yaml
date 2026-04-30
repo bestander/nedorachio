@@ -13,3 +13,4 @@ esp32:
 
 packages:
   core: !include packages/01-core.yaml
+  zones: !include packages/02-zones.yaml

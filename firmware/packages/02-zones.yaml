@@ -1,0 +1,332 @@
+# 8 zone relays + safety invariants (single-zone-on, runtime cap, boot-safe, e-stop).
+#
+# Placeholder GPIO assignments — verify against the actual board (Task 1.1) and
+# update both the pin numbers and `inverted:` polarity here. Most opto-isolated
+# 8-relay ESP32 boards drive the relay LOW (active-low → `inverted: true`).
+
+substitutions:
+  zone_max_runtime_default_s: "3600"   # 60 minutes; replaced by per-zone tunable in Task 3.1
+
+# Backing GPIO outputs (internal, hidden from HA).
+output:
+  - platform: gpio
+    pin: { number: GPIO23, inverted: true }
+    id: relay_1_out
+  - platform: gpio
+    pin: { number: GPIO19, inverted: true }
+    id: relay_2_out
+  - platform: gpio
+    pin: { number: GPIO18, inverted: true }
+    id: relay_3_out
+  - platform: gpio
+    pin: { number: GPIO5, inverted: true }
+    id: relay_4_out
+  - platform: gpio
+    pin: { number: GPIO17, inverted: true }
+    id: relay_5_out
+  - platform: gpio
+    pin: { number: GPIO16, inverted: true }
+    id: relay_6_out
+  - platform: gpio
+    pin: { number: GPIO4, inverted: true }
+    id: relay_7_out
+  - platform: gpio
+    pin: { number: GPIO13, inverted: true }
+    id: relay_8_out
+
+# Public per-zone switches. Turning these on routes through the safety layer.
+switch:
+  - platform: template
+    name: "Zone 1"
+    id: zone_1
+    icon: mdi:water
+    optimistic: false
+    turn_on_action:
+      - script.execute:
+          id: request_zone_on
+          zone_id: 1
+    turn_off_action:
+      - script.execute:
+          id: request_zone_off
+          zone_id: 1
+    lambda: |-
+      return id(zone_1_actual_state);
+
+  - platform: template
+    name: "Zone 2"
+    id: zone_2
+    icon: mdi:water
+    optimistic: false
+    turn_on_action:
+      - script.execute: { id: request_zone_on, zone_id: 2 }
+    turn_off_action:
+      - script.execute: { id: request_zone_off, zone_id: 2 }
+    lambda: 'return id(zone_2_actual_state);'
+
+  - platform: template
+    name: "Zone 3"
+    id: zone_3
+    icon: mdi:water
+    optimistic: false
+    turn_on_action:
+      - script.execute: { id: request_zone_on, zone_id: 3 }
+    turn_off_action:
+      - script.execute: { id: request_zone_off, zone_id: 3 }
+    lambda: 'return id(zone_3_actual_state);'
+
+  - platform: template
+    name: "Zone 4"
+    id: zone_4
+    icon: mdi:water
+    optimistic: false
+    turn_on_action:
+      - script.execute: { id: request_zone_on, zone_id: 4 }
+    turn_off_action:
+      - script.execute: { id: request_zone_off, zone_id: 4 }
+    lambda: 'return id(zone_4_actual_state);'
+
+  - platform: template
+    name: "Zone 5"
+    id: zone_5
+    icon: mdi:water
+    optimistic: false
+    turn_on_action:
+      - script.execute: { id: request_zone_on, zone_id: 5 }
+    turn_off_action:
+      - script.execute: { id: request_zone_off, zone_id: 5 }
+    lambda: 'return id(zone_5_actual_state);'
+
+  - platform: template
+    name: "Zone 6"
+    id: zone_6
+    icon: mdi:water
+    optimistic: false
+    turn_on_action:
+      - script.execute: { id: request_zone_on, zone_id: 6 }
+    turn_off_action:
+      - script.execute: { id: request_zone_off, zone_id: 6 }
+    lambda: 'return id(zone_6_actual_state);'
+
+  - platform: template
+    name: "Zone 7"
+    id: zone_7
+    icon: mdi:water
+    optimistic: false
+    turn_on_action:
+      - script.execute: { id: request_zone_on, zone_id: 7 }
+    turn_off_action:
+      - script.execute: { id: request_zone_off, zone_id: 7 }
+    lambda: 'return id(zone_7_actual_state);'
+
+  - platform: template
+    name: "Zone 8"
+    id: zone_8
+    icon: mdi:water
+    optimistic: false
+    turn_on_action:
+      - script.execute: { id: request_zone_on, zone_id: 8 }
+    turn_off_action:
+      - script.execute: { id: request_zone_off, zone_id: 8 }
+    lambda: 'return id(zone_8_actual_state);'
+
+  - platform: template
+    name: "Master enable"
+    id: master_enable
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+    icon: mdi:water-pump
+
+  - platform: template
+    name: "Emergency stop (latched)"
+    id: emergency_stop_latched
+    optimistic: true
+    restore_mode: ALWAYS_OFF
+
+# State globals. `zone_N_actual_state` reflects the *real* relay state, which
+# the safety layer maintains; the public switch reads it via `lambda:`.
+globals:
+  - id: zone_1_actual_state
+    type: bool
+    restore_value: false
+    initial_value: 'false'
+  - id: zone_2_actual_state
+    type: bool
+    restore_value: false
+    initial_value: 'false'
+  - id: zone_3_actual_state
+    type: bool
+    restore_value: false
+    initial_value: 'false'
+  - id: zone_4_actual_state
+    type: bool
+    restore_value: false
+    initial_value: 'false'
+  - id: zone_5_actual_state
+    type: bool
+    restore_value: false
+    initial_value: 'false'
+  - id: zone_6_actual_state
+    type: bool
+    restore_value: false
+    initial_value: 'false'
+  - id: zone_7_actual_state
+    type: bool
+    restore_value: false
+    initial_value: 'false'
+  - id: zone_8_actual_state
+    type: bool
+    restore_value: false
+    initial_value: 'false'
+
+  - id: currently_on_zone
+    type: int
+    restore_value: false
+    initial_value: '0'
+  - id: zone_started_at_ms
+    type: uint32_t
+    restore_value: false
+    initial_value: '0'
+
+# Buttons exposed to HA.
+button:
+  - platform: template
+    name: "Emergency stop all"
+    id: emergency_stop_all
+    icon: mdi:stop-circle
+    on_press:
+      - script.execute: cancel_everything
+
+# Helper scripts. The safety layer lives entirely in these.
+script:
+  # Request to turn zone N on. Handles single-zone invariant + inter-zone delay.
+  - id: request_zone_on
+    mode: queued
+    parameters:
+      zone_id: int
+    then:
+      - if:
+          condition:
+            or:
+              - switch.is_off: master_enable
+              - switch.is_on: emergency_stop_latched
+          then:
+            - logger.log: "Master disabled or e-stop latched; refusing zone request."
+            - script.stop: request_zone_on
+      - if:
+          condition:
+            lambda: 'return id(currently_on_zone) != 0 && id(currently_on_zone) != zone_id;'
+          then:
+            - script.execute: turn_off_current_zone
+            # TODO(Task 3.1): replace with `delay: !lambda 'return id(inter_zone_delay_s).state * 1000;'`
+            - delay: 2s
+      - script.execute:
+          id: drive_zone
+          zone_id: !lambda 'return zone_id;'
+          state: !lambda 'return true;'
+
+  - id: request_zone_off
+    mode: queued
+    parameters:
+      zone_id: int
+    then:
+      - script.execute:
+          id: drive_zone
+          zone_id: !lambda 'return zone_id;'
+          state: !lambda 'return false;'
+
+  - id: drive_zone
+    mode: queued
+    parameters:
+      zone_id: int
+      state: bool
+    then:
+      - lambda: |-
+          // Drive the right relay and update the matching state global.
+          switch (zone_id) {
+            case 1: state ? id(relay_1_out).turn_on() : id(relay_1_out).turn_off(); id(zone_1_actual_state) = state; break;
+            case 2: state ? id(relay_2_out).turn_on() : id(relay_2_out).turn_off(); id(zone_2_actual_state) = state; break;
+            case 3: state ? id(relay_3_out).turn_on() : id(relay_3_out).turn_off(); id(zone_3_actual_state) = state; break;
+            case 4: state ? id(relay_4_out).turn_on() : id(relay_4_out).turn_off(); id(zone_4_actual_state) = state; break;
+            case 5: state ? id(relay_5_out).turn_on() : id(relay_5_out).turn_off(); id(zone_5_actual_state) = state; break;
+            case 6: state ? id(relay_6_out).turn_on() : id(relay_6_out).turn_off(); id(zone_6_actual_state) = state; break;
+            case 7: state ? id(relay_7_out).turn_on() : id(relay_7_out).turn_off(); id(zone_7_actual_state) = state; break;
+            case 8: state ? id(relay_8_out).turn_on() : id(relay_8_out).turn_off(); id(zone_8_actual_state) = state; break;
+          }
+          if (state) {
+            id(currently_on_zone) = zone_id;
+            id(zone_started_at_ms) = millis();
+          } else if (id(currently_on_zone) == zone_id) {
+            id(currently_on_zone) = 0;
+            id(zone_started_at_ms) = 0;
+          }
+      - lambda: |-
+          // Re-publish the switch state so HA reflects the actual relay state.
+          switch (zone_id) {
+            case 1: id(zone_1).publish_state(id(zone_1_actual_state)); break;
+            case 2: id(zone_2).publish_state(id(zone_2_actual_state)); break;
+            case 3: id(zone_3).publish_state(id(zone_3_actual_state)); break;
+            case 4: id(zone_4).publish_state(id(zone_4_actual_state)); break;
+            case 5: id(zone_5).publish_state(id(zone_5_actual_state)); break;
+            case 6: id(zone_6).publish_state(id(zone_6_actual_state)); break;
+            case 7: id(zone_7).publish_state(id(zone_7_actual_state)); break;
+            case 8: id(zone_8).publish_state(id(zone_8_actual_state)); break;
+          }
+
+  - id: turn_off_current_zone
+    mode: single
+    then:
+      - if:
+          condition:
+            lambda: 'return id(currently_on_zone) != 0;'
+          then:
+            - script.execute:
+                id: drive_zone
+                zone_id: !lambda 'return id(currently_on_zone);'
+                state: !lambda 'return false;'
+
+  - id: cancel_everything
+    mode: single
+    then:
+      - lambda: |-
+          // Force every relay off, regardless of state.
+          id(relay_1_out).turn_off(); id(zone_1_actual_state) = false; id(zone_1).publish_state(false);
+          id(relay_2_out).turn_off(); id(zone_2_actual_state) = false; id(zone_2).publish_state(false);
+          id(relay_3_out).turn_off(); id(zone_3_actual_state) = false; id(zone_3).publish_state(false);
+          id(relay_4_out).turn_off(); id(zone_4_actual_state) = false; id(zone_4).publish_state(false);
+          id(relay_5_out).turn_off(); id(zone_5_actual_state) = false; id(zone_5).publish_state(false);
+          id(relay_6_out).turn_off(); id(zone_6_actual_state) = false; id(zone_6).publish_state(false);
+          id(relay_7_out).turn_off(); id(zone_7_actual_state) = false; id(zone_7).publish_state(false);
+          id(relay_8_out).turn_off(); id(zone_8_actual_state) = false; id(zone_8).publish_state(false);
+          id(currently_on_zone) = 0;
+          id(zone_started_at_ms) = 0;
+
+# Boot-safe: every relay forced off as soon as ESPHome's main loop starts.
+esphome:
+  on_boot:
+    priority: 800
+    then:
+      - script.execute: cancel_everything
+
+# Periodic safety: per-zone runtime cap. Hardcoded default until Task 3.1 wires
+# the per-zone tunables in.
+interval:
+  - interval: 1s
+    then:
+      - if:
+          condition:
+            lambda: |-
+              if (id(currently_on_zone) == 0) return false;
+              uint32_t elapsed_ms = millis() - id(zone_started_at_ms);
+              return elapsed_ms > (${zone_max_runtime_default_s} * 1000UL);
+          then:
+            - logger.log: "Runtime cap exceeded; cutting zone."
+            - script.execute: cancel_everything
+            - binary_sensor.template.publish:
+                id: alarm_runtime_exceeded
+                state: true
+
+binary_sensor:
+  - platform: template
+    name: "Alarm: runtime exceeded"
+    id: alarm_runtime_exceeded
+    device_class: problem
