@@ -345,6 +345,8 @@ script:
           id(run_cancel_requested) = false;
           id(run_cancel_cause) = "";
           id(retries_used_this_zone) = 0;
+          id(zone_run_started_pulses) = (uint32_t)id(flow_pulses_total).state;
+          id(zone_run_started_ms) = millis();
       - while:
           condition:
             lambda: |-
@@ -410,6 +412,86 @@ script:
           } else {
             ESP_LOGI("engine", "Zone %d completed (%.1f min)", id(run_zone_id), id(run_minutes_done));
           }
+
+          // Accumulate stats: gallons (from pulses), duration, last-run timestamp.
+          uint32_t end_pulses = (uint32_t)id(flow_pulses_total).state;
+          uint32_t pulses = (end_pulses >= id(zone_run_started_pulses))
+              ? end_pulses - id(zone_run_started_pulses) : 0;
+          float ppg = id(pulses_per_gallon).state;
+          float gallons = (ppg > 0) ? (pulses / ppg) : 0.0f;
+          uint32_t duration_s = (millis() - id(zone_run_started_ms)) / 1000;
+          uint32_t now_epoch = id(time_synced).state ? id(ha_time).now().timestamp : 0;
+
+          switch (id(run_zone_id)) {
+            case 1:
+              id(zone_1_run_count_total) += 1;
+              id(zone_1_gallons_total) += gallons;
+              id(zone_1_seconds_total) += duration_s;
+              id(zone_1_last_gallons) = gallons;
+              id(zone_1_last_duration_s) = duration_s;
+              if (now_epoch) id(zone_1_last_run_at) = now_epoch;
+              break;
+            case 2:
+              id(zone_2_run_count_total) += 1;
+              id(zone_2_gallons_total) += gallons;
+              id(zone_2_seconds_total) += duration_s;
+              id(zone_2_last_gallons) = gallons;
+              id(zone_2_last_duration_s) = duration_s;
+              if (now_epoch) id(zone_2_last_run_at) = now_epoch;
+              break;
+            case 3:
+              id(zone_3_run_count_total) += 1;
+              id(zone_3_gallons_total) += gallons;
+              id(zone_3_seconds_total) += duration_s;
+              id(zone_3_last_gallons) = gallons;
+              id(zone_3_last_duration_s) = duration_s;
+              if (now_epoch) id(zone_3_last_run_at) = now_epoch;
+              break;
+            case 4:
+              id(zone_4_run_count_total) += 1;
+              id(zone_4_gallons_total) += gallons;
+              id(zone_4_seconds_total) += duration_s;
+              id(zone_4_last_gallons) = gallons;
+              id(zone_4_last_duration_s) = duration_s;
+              if (now_epoch) id(zone_4_last_run_at) = now_epoch;
+              break;
+            case 5:
+              id(zone_5_run_count_total) += 1;
+              id(zone_5_gallons_total) += gallons;
+              id(zone_5_seconds_total) += duration_s;
+              id(zone_5_last_gallons) = gallons;
+              id(zone_5_last_duration_s) = duration_s;
+              if (now_epoch) id(zone_5_last_run_at) = now_epoch;
+              break;
+            case 6:
+              id(zone_6_run_count_total) += 1;
+              id(zone_6_gallons_total) += gallons;
+              id(zone_6_seconds_total) += duration_s;
+              id(zone_6_last_gallons) = gallons;
+              id(zone_6_last_duration_s) = duration_s;
+              if (now_epoch) id(zone_6_last_run_at) = now_epoch;
+              break;
+            case 7:
+              id(zone_7_run_count_total) += 1;
+              id(zone_7_gallons_total) += gallons;
+              id(zone_7_seconds_total) += duration_s;
+              id(zone_7_last_gallons) = gallons;
+              id(zone_7_last_duration_s) = duration_s;
+              if (now_epoch) id(zone_7_last_run_at) = now_epoch;
+              break;
+            case 8:
+              id(zone_8_run_count_total) += 1;
+              id(zone_8_gallons_total) += gallons;
+              id(zone_8_seconds_total) += duration_s;
+              id(zone_8_last_gallons) = gallons;
+              id(zone_8_last_duration_s) = duration_s;
+              if (now_epoch) id(zone_8_last_run_at) = now_epoch;
+              break;
+          }
+          id(gallons_today) += gallons;
+          id(gallons_this_month) += gallons;
+          id(runs_today) += 1;
+          id(runs_this_month) += 1;
 
   # Retry-aware wrapper. After a flow/pressure cancel, waits retry_delay_s,
   # re-runs pre-flight, restarts the same zone from the beginning. Rain/user
