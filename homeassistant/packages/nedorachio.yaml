@@ -1,0 +1,35 @@
+# Nedorachio Home Assistant package: weather feeder, notifications, dashboard.
+#
+# Copy this file into your HA config under `packages/`. Make sure your
+# `configuration.yaml` has:
+#
+#   homeassistant:
+#     packages: !include_dir_named packages
+#
+# Replace `weather.your_local_forecast` with your actual weather entity.
+# Replace `sensor.rain_observed_48h` with whatever observed-rain sensor you
+# have. If you don't have one, leave the template — it falls back to 0 and
+# the device's rain-sensor + static-pressure gates still protect the system.
+
+automation:
+  - id: nedorachio_weather_feeder
+    alias: "Nedorachio: push 48h rain to controller"
+    trigger:
+      - platform: time_pattern
+        minutes: "/10"
+    action:
+      - variables:
+          # Sum precipitation_amount over hourly entries in the last 48h, or
+          # use a directly-reported observed-rainfall sensor if available.
+          rain_mm: >-
+            {% set obs_id = 'sensor.rain_observed_48h' %}
+            {% if states(obs_id) not in ['unknown','unavailable','none', None] %}
+              {{ states(obs_id) | float(0) }}
+            {% else %}
+              0.0
+            {% endif %}
+      - service: number.set_value
+        target:
+          entity_id: number.nedorachio_rain_mm_last_48h
+        data:
+          value: "{{ rain_mm }}"

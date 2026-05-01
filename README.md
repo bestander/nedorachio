@@ -39,3 +39,15 @@ After unboxing the actual board (Amazon ASIN B0DK6QKNBM), verify each pin with
 the multimeter / clicking-relay procedure described in the implementation plan
 (Task 1.1) and update `firmware/packages/02-zones.yaml`,
 `firmware/packages/03-sensors.yaml`, and this table.
+
+## Home Assistant setup
+
+1. Copy `homeassistant/packages/nedorachio.yaml` into your HA config under
+   `packages/`. Make sure `configuration.yaml` has
+   `homeassistant: packages: !include_dir_named packages`.
+2. Replace `weather.your_local_forecast` with your weather entity and
+   `sensor.rain_observed_48h` with whatever observed-rain sensor you have.
+   If you don't have one, the feeder writes `0` and the device falls back to
+   the rain sensor and static-pressure gate.
+3. Reload automations. Within 10 minutes, `number.nedorachio_rain_mm_last_48h`
+   should be populated.
