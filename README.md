@@ -45,6 +45,9 @@ both the table below and the matching `pin:` lines in
 | Rain sensor input  | GPIO27           | internal pull-up |
 | Flow meter pulse   | GPIO26           | internal pull-up, interrupt-capable |
 | Pressure ADC       | GPIO34           | ADC1, 11 dB attenuation |
+| Status/select LED  | GPIO14           | active-high (flip `inverted:` if wiring is active-low) |
+| Start/stop button  | GPIO21           | momentary, button-to-GND, internal pull-up |
+| Zone-select button | GPIO22           | momentary, button-to-GND, internal pull-up |
 
 ### Calibration
 
@@ -143,6 +146,24 @@ firmware/
 - `switch.nedorachio_zone_N` is the raw on/off control (still gated by the
   master enable / e-stop / single-zone invariant).
 - `button.nedorachio_run_full_cycle` runs the full cycle on demand.
+
+### Local controls
+
+Two physical buttons and an LED on the device:
+
+- **Status / select LED.** Solid ON while any zone is watering. After a
+  zone-select press, blinks N times (where N is the newly selected zone),
+  then returns to its idle state. Off when nothing is happening.
+- **Start/stop button.** Press once while idle → starts the currently
+  selected zone. The total runtime is capped by `local_button_max_min`
+  (default 30 min, HA-tunable as `number.nedorachio_manual_run_max_minutes`)
+  so an unattended press can't run forever. Press again (or press during
+  *any* run, including a scheduled full cycle) → cancels everything with
+  cause `user`. The cancellation does not retry.
+- **Zone-select button.** Cycles through enabled zones (per
+  `zones_enabled_bitmask`), wrapping at 8. The LED then blinks the new
+  selection's number so you can confirm without looking at HA. Selection
+  persists across reboots.
 
 ### Skipping a run
 

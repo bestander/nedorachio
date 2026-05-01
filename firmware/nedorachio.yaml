@@ -19,3 +19,4 @@ packages:
   engine: !include packages/05-engine.yaml
   schedule: !include packages/06-schedule.yaml
   stats: !include packages/07-stats.yaml
+  local: !include packages/08-local-controls.yaml

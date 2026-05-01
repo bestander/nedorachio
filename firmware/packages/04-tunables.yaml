@@ -675,6 +675,18 @@ number:
     step: 1
     unit_of_measurement: "h"
 
+  # --- Local controls ---
+  - platform: template
+    name: "Manual run max minutes"
+    id: local_button_max_min
+    optimistic: true
+    restore_value: true
+    initial_value: 30
+    min_value: 1
+    max_value: 240
+    step: 1
+    unit_of_measurement: "min"
+
   # --- Sequencing ---
   - platform: template
     name: "Inter-zone delay seconds"
