@@ -33,3 +33,33 @@ automation:
           entity_id: number.nedorachio_rain_mm_last_48h
         data:
           value: "{{ rain_mm }}"
+
+  - id: nedorachio_alarm_notify
+    alias: "Nedorachio: alarm notifications"
+    mode: parallel
+    trigger:
+      - platform: state
+        entity_id:
+          - binary_sensor.nedorachio_alarm_no_flow
+          - binary_sensor.nedorachio_alarm_high_flow
+          - binary_sensor.nedorachio_alarm_phantom_flow
+          - binary_sensor.nedorachio_alarm_low_pressure
+          - binary_sensor.nedorachio_alarm_high_pressure
+          - binary_sensor.nedorachio_alarm_pre_flight_failed
+          - binary_sensor.nedorachio_alarm_runtime_exceeded
+        to: "on"
+    action:
+      - variables:
+          alarm_name: "{{ trigger.to_state.attributes.friendly_name }}"
+          zone: "{{ states('sensor.nedorachio_currently_running_zone') }}"
+          phase: "{{ states('sensor.nedorachio_current_phase') }}"
+          psi: "{{ states('sensor.nedorachio_pressure') }}"
+          gpm: "{{ states('sensor.nedorachio_flow_rate') }}"
+      # Replace `notify.notify` with your actual notify target,
+      # e.g. `notify.mobile_app_yourphone`.
+      - service: notify.notify
+        data:
+          title: "Nedorachio: {{ alarm_name }}"
+          message: >-
+            Phase {{ phase }}, zone {{ zone }}.
+            PSI {{ psi }}, flow {{ gpm }} gpm.

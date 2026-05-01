@@ -51,3 +51,5 @@ the multimeter / clicking-relay procedure described in the implementation plan
    the rain sensor and static-pressure gate.
 3. Reload automations. Within 10 minutes, `number.nedorachio_rain_mm_last_48h`
    should be populated.
+4. Edit the `notify.notify` line in `nedorachio_alarm_notify` to use your
+   actual notification target (e.g. `notify.mobile_app_yourphone`).
