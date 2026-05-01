@@ -352,6 +352,10 @@ script:
                   && !id(run_cancel_requested);
           then:
             # ---- RUNNING phase ----
+            - lambda: |-
+                id(current_phase_str) = "running";
+                id(phase_started_ms) = millis();
+                id(phase_total_ms) = (uint32_t)(id(run_cycle_min) * 60000.0f);
             - script.execute:
                 id: drive_zone
                 zone_id: !lambda 'return id(run_zone_id);'
@@ -382,6 +386,10 @@ script:
                            id(run_soak_min) > 0 &&
                            !id(run_cancel_requested);
                 then:
+                  - lambda: |-
+                      id(current_phase_str) = "soaking";
+                      id(phase_started_ms) = millis();
+                      id(phase_total_ms) = (uint32_t)(id(run_soak_min) * 60000.0f);
                   - script.execute:
                       id: drive_zone
                       zone_id: !lambda 'return id(run_zone_id);'
@@ -585,7 +593,18 @@ script:
                       then:
                         - logger.log: "Full cycle stopped: fault latched."
                         - script.stop: run_full_cycle
-      - lambda: 'ESP_LOGI("cycle", "Full cycle completed.");'
+      - lambda: |-
+          ESP_LOGI("cycle", "Full cycle completed.");
+          id(current_phase_str) = id(any_alarm_latched) ? "fault" : "idle";
+          id(phase_total_ms) = 0;
+          if (id(time_synced).state) {
+            id(last_run_finished_epoch) = id(ha_time).now().timestamp;
+          }
+          if (id(any_alarm_latched)) {
+            id(last_run_outcome_str) = "cancelled_" + id(run_cancel_cause);
+          } else {
+            id(last_run_outcome_str) = "completed";
+          }
 
 interval:
   - interval: 1s

@@ -14,6 +14,28 @@ globals:
     restore_value: true
     initial_value: '0'
 
+  # --- Plan-readout state ---
+  - id: current_phase_str
+    type: std::string
+    restore_value: false
+    initial_value: '"idle"'
+  - id: phase_started_ms
+    type: uint32_t
+    restore_value: false
+    initial_value: '0'
+  - id: phase_total_ms
+    type: uint32_t
+    restore_value: false
+    initial_value: '0'
+  - id: last_run_finished_epoch
+    type: uint32_t
+    restore_value: true
+    initial_value: '0'
+  - id: last_run_outcome_str
+    type: std::string
+    restore_value: true
+    initial_value: '""'
+
 button:
   - platform: template
     name: "Skip next run"
@@ -144,3 +166,97 @@ script:
             id(schedule_should_fire).publish_state(true);
             return;
           }
+
+text_sensor:
+  - platform: template
+    name: "Current phase"
+    id: current_phase
+    update_interval: 1s
+    lambda: 'return id(current_phase_str);'
+
+  - platform: template
+    name: "Last run outcome"
+    id: last_run_outcome
+    update_interval: 5s
+    lambda: 'return id(last_run_outcome_str);'
+
+sensor:
+  - platform: template
+    name: "Currently running zone"
+    id: currently_running_zone
+    update_interval: 1s
+    lambda: 'return (float)id(currently_on_zone);'
+    accuracy_decimals: 0
+
+  - platform: template
+    name: "Current phase remaining (s)"
+    id: current_phase_remaining_s
+    update_interval: 1s
+    accuracy_decimals: 0
+    unit_of_measurement: "s"
+    lambda: |-
+      if (id(phase_total_ms) == 0) return 0.0f;
+      uint32_t elapsed = millis() - id(phase_started_ms);
+      if (elapsed >= id(phase_total_ms)) return 0.0f;
+      return (id(phase_total_ms) - elapsed) / 1000.0f;
+
+  - platform: template
+    name: "Run progress %"
+    id: run_progress_pct
+    update_interval: 1s
+    accuracy_decimals: 0
+    unit_of_measurement: "%"
+    lambda: |-
+      if (id(run_total_min) == 0) return 0.0f;
+      return (id(run_minutes_done) / id(run_total_min)) * 100.0f;
+
+  - platform: template
+    name: "Next planned run (epoch)"
+    id: next_planned_run
+    update_interval: 60s
+    accuracy_decimals: 0
+    unit_of_measurement: "s"
+    lambda: |-
+      if (!id(time_synced).state) return 0.0f;
+      auto now = id(ha_time).now();
+      if (!now.is_valid()) return 0.0f;
+      uint32_t now_epoch = now.timestamp;
+      int target_h = (int)id(schedule_start_hour).state;
+      int target_m = (int)id(schedule_start_minute).state;
+      for (int d = 0; d < 8; d++) {
+        time_t cand = (time_t)now_epoch + d * 86400;
+        struct tm cand_tm;
+        localtime_r(&cand, &cand_tm);
+        cand_tm.tm_hour = target_h;
+        cand_tm.tm_min = target_m;
+        cand_tm.tm_sec = 0;
+        time_t fire = mktime(&cand_tm);
+        if ((uint32_t)fire <= now_epoch) continue;
+        int dow = cand_tm.tm_wday + 1;
+        bool match = false;
+        switch (dow) {
+          case 1: match = id(sched_sun).state; break;
+          case 2: match = id(sched_mon).state; break;
+          case 3: match = id(sched_tue).state; break;
+          case 4: match = id(sched_wed).state; break;
+          case 5: match = id(sched_thu).state; break;
+          case 6: match = id(sched_fri).state; break;
+          case 7: match = id(sched_sat).state; break;
+        }
+        if (match) return (float)fire;
+      }
+      return 0.0f;
+
+  - platform: template
+    name: "Last run started (epoch)"
+    id: last_run_started_at
+    update_interval: 60s
+    accuracy_decimals: 0
+    lambda: 'return (float)id(last_run_started_epoch);'
+
+  - platform: template
+    name: "Last run finished (epoch)"
+    id: last_run_finished_at
+    update_interval: 60s
+    accuracy_decimals: 0
+    lambda: 'return (float)id(last_run_finished_epoch);'
