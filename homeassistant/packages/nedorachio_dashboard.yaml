@@ -1,0 +1,129 @@
+# Lovelace view for Nedorachio.
+# Paste into the dashboard editor: Settings → Dashboards → Open dashboard →
+# ⋮ → Edit Dashboard → ⋮ → Raw configuration editor → append under `views:`.
+
+title: Nedorachio
+icon: mdi:sprinkler
+path: nedorachio
+cards:
+  - type: entities
+    title: Master controls
+    entities:
+      - entity: switch.nedorachio_master_enable
+        name: Master enable
+      - entity: switch.nedorachio_fallback_schedule_enabled
+        name: Fallback schedule
+      - entity: button.nedorachio_emergency_stop_all
+        name: Emergency stop
+      - entity: button.nedorachio_skip_next_run
+        name: Skip next run
+      - entity: button.nedorachio_clear_fault
+        name: Clear fault
+      - entity: button.nedorachio_run_full_cycle
+        name: Run full cycle now
+
+  - type: entities
+    title: Status
+    entities:
+      - entity: sensor.nedorachio_current_phase
+      - entity: sensor.nedorachio_currently_running_zone
+      - entity: sensor.nedorachio_current_phase_remaining_s
+      - entity: sensor.nedorachio_run_progress
+      - entity: sensor.nedorachio_next_planned_run_epoch
+      - entity: sensor.nedorachio_last_run_outcome
+
+  - type: glance
+    title: Live sensors
+    entities:
+      - entity: binary_sensor.nedorachio_rain_sensor
+      - entity: sensor.nedorachio_flow_rate
+      - entity: sensor.nedorachio_pressure
+      - entity: sensor.nedorachio_gallons_today
+      - entity: sensor.nedorachio_gallons_this_month
+
+  - type: entities
+    title: Zone 1
+    entities:
+      - entity: switch.nedorachio_zone_1
+      - entity: number.nedorachio_zone_1_total_minutes
+      - entity: number.nedorachio_zone_1_cycle_minutes
+      - entity: number.nedorachio_zone_1_soak_minutes
+      - entity: button.nedorachio_run_now_zone_1
+      - entity: sensor.nedorachio_zone_1_last_gallons
+      - entity: sensor.nedorachio_zone_1_run_count
+      - entity: sensor.nedorachio_zone_1_gallons_total
+
+  - type: entities
+    title: Zone 2
+    entities:
+      - entity: switch.nedorachio_zone_2
+      - entity: number.nedorachio_zone_2_total_minutes
+      - entity: number.nedorachio_zone_2_cycle_minutes
+      - entity: number.nedorachio_zone_2_soak_minutes
+      - entity: button.nedorachio_run_now_zone_2
+      - entity: sensor.nedorachio_zone_2_last_gallons
+      - entity: sensor.nedorachio_zone_2_run_count
+      - entity: sensor.nedorachio_zone_2_gallons_total
+
+  - type: entities
+    title: Zone 3
+    entities:
+      - entity: switch.nedorachio_zone_3
+      - entity: number.nedorachio_zone_3_total_minutes
+      - entity: number.nedorachio_zone_3_cycle_minutes
+      - entity: number.nedorachio_zone_3_soak_minutes
+      - entity: button.nedorachio_run_now_zone_3
+      - entity: sensor.nedorachio_zone_3_last_gallons
+      - entity: sensor.nedorachio_zone_3_run_count
+      - entity: sensor.nedorachio_zone_3_gallons_total
+
+  - type: entities
+    title: Zone 4
+    entities:
+      - entity: switch.nedorachio_zone_4
+      - entity: number.nedorachio_zone_4_total_minutes
+      - entity: number.nedorachio_zone_4_cycle_minutes
+      - entity: number.nedorachio_zone_4_soak_minutes
+      - entity: button.nedorachio_run_now_zone_4
+      - entity: sensor.nedorachio_zone_4_last_gallons
+      - entity: sensor.nedorachio_zone_4_run_count
+      - entity: sensor.nedorachio_zone_4_gallons_total
+
+  - type: entities
+    title: Alarms
+    entities:
+      - entity: binary_sensor.nedorachio_alarm_pre_flight_failed
+      - entity: binary_sensor.nedorachio_alarm_no_flow
+      - entity: binary_sensor.nedorachio_alarm_high_flow
+      - entity: binary_sensor.nedorachio_alarm_phantom_flow
+      - entity: binary_sensor.nedorachio_alarm_low_pressure
+      - entity: binary_sensor.nedorachio_alarm_high_pressure
+      - entity: binary_sensor.nedorachio_alarm_runtime_exceeded
+
+  - type: entities
+    title: Tuning
+    entities:
+      - entity: number.nedorachio_pulses_per_gallon
+      - entity: number.nedorachio_pressure_static_min_psi
+      - entity: number.nedorachio_pressure_static_max_psi
+      - entity: number.nedorachio_pressure_running_min_psi
+      - entity: number.nedorachio_pressure_high_psi
+      - entity: number.nedorachio_phantom_flow_gpm
+      - entity: number.nedorachio_inter_zone_delay_seconds
+      - entity: number.nedorachio_retry_count
+      - entity: number.nedorachio_retry_delay_seconds
+      - entity: number.nedorachio_catch_up_window_hours
+      - entity: number.nedorachio_rain_hold_hours_after_sensor
+      - entity: number.nedorachio_rain_mm_threshold_48h
+      - entity: number.nedorachio_rain_hold_hours_after_forecast
+      - entity: number.nedorachio_rain_mm_max_age_hours
+      - entity: switch.nedorachio_high_pressure_cancels_run
+      - entity: number.nedorachio_schedule_start_hour
+      - entity: number.nedorachio_schedule_start_minute
+      - entity: switch.nedorachio_schedule_sunday
+      - entity: switch.nedorachio_schedule_monday
+      - entity: switch.nedorachio_schedule_tuesday
+      - entity: switch.nedorachio_schedule_wednesday
+      - entity: switch.nedorachio_schedule_thursday
+      - entity: switch.nedorachio_schedule_friday
+      - entity: switch.nedorachio_schedule_saturday

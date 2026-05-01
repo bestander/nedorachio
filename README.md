@@ -53,3 +53,8 @@ the multimeter / clicking-relay procedure described in the implementation plan
    should be populated.
 4. Edit the `notify.notify` line in `nedorachio_alarm_notify` to use your
    actual notification target (e.g. `notify.mobile_app_yourphone`).
+5. Add a new dashboard view: Settings → Dashboards → Open the Lovelace
+   dashboard → ⋮ → Edit Dashboard → ⋮ → Raw configuration editor → paste the
+   contents of `homeassistant/packages/nedorachio_dashboard.yaml` under
+   `views:`. Note that exact entity slugs depend on how HA names entities at
+   discovery — confirm each card resolves before saving.
