@@ -19,7 +19,7 @@ binary_sensor:
     on_press:
       - lambda: |-
           if (id(time_synced).state) {
-            id(rain_sensor_last_wet_epoch) = id(ha_time).now().timestamp;
+            id(rain_sensor_last_wet_epoch) = (uint32_t)id(effective_now_epoch).state;
           }
 
 sensor:

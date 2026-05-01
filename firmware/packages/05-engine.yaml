@@ -253,7 +253,7 @@ script:
             id(pre_flight_passed) = false;
             id(pre_flight_reason) = "rain_sensor_wet";
           } else {
-            uint32_t now_epoch = id(ha_time).now().timestamp;
+            uint32_t now_epoch = (uint32_t)id(effective_now_epoch).state;
             uint32_t hold_s = (uint32_t)(id(rain_hold_hours_after_sensor).state * 3600.0f);
             if (id(rain_sensor_last_wet_epoch) > 0 &&
                 now_epoch - id(rain_sensor_last_wet_epoch) < hold_s) {
@@ -263,7 +263,7 @@ script:
           }
       # 5. rain forecast (with TTL → fail-open if stale)
       - lambda: |-
-          uint32_t now_epoch = id(ha_time).now().timestamp;
+          uint32_t now_epoch = (uint32_t)id(effective_now_epoch).state;
           uint32_t ttl_s = (uint32_t)(id(rain_mm_max_age_hours).state * 3600.0f);
           float effective_mm = id(rain_mm_last_48h).state;
           uint32_t pushed = (uint32_t)id(rain_mm_last_pushed_epoch).state;
@@ -420,7 +420,7 @@ script:
           float ppg = id(pulses_per_gallon).state;
           float gallons = (ppg > 0) ? (pulses / ppg) : 0.0f;
           uint32_t duration_s = (millis() - id(zone_run_started_ms)) / 1000;
-          uint32_t now_epoch = id(time_synced).state ? id(ha_time).now().timestamp : 0;
+          uint32_t now_epoch = id(time_synced).state ? (uint32_t)id(effective_now_epoch).state : 0;
 
           switch (id(run_zone_id)) {
             case 1:
@@ -583,7 +583,7 @@ script:
       # if pre-flight fails.
       - lambda: |-
           if (id(time_synced).state) {
-            id(last_run_started_epoch) = id(ha_time).now().timestamp;
+            id(last_run_started_epoch) = (uint32_t)id(effective_now_epoch).state;
           }
       - script.execute:
           id: run_pre_flight
@@ -680,7 +680,7 @@ script:
           id(current_phase_str) = id(any_alarm_latched) ? "fault" : "idle";
           id(phase_total_ms) = 0;
           if (id(time_synced).state) {
-            id(last_run_finished_epoch) = id(ha_time).now().timestamp;
+            id(last_run_finished_epoch) = (uint32_t)id(effective_now_epoch).state;
           }
           if (id(any_alarm_latched)) {
             id(last_run_outcome_str) = "cancelled_" + id(run_cancel_cause);
@@ -795,7 +795,7 @@ interval:
 
           // Rain sensor wet → cancel (no retry; cause noted for retry policy).
           if (id(rain_sensor).state) {
-            id(rain_sensor_last_wet_epoch) = id(ha_time).now().timestamp;
+            id(rain_sensor_last_wet_epoch) = (uint32_t)id(effective_now_epoch).state;
             id(run_cancel_requested) = true;
             id(run_cancel_cause) = "rain";
           }

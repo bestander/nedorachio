@@ -21,14 +21,25 @@ ota:
   - platform: esphome
     password: !secret ota_password
 
-# Two time sources; whichever syncs first wins. On every sync, kick off
-# `maybe_catch_up` (mode: single, idempotent — won't double-fire).
+# Time sources:
+# - Primary: HA time (`ha_time`) once available.
+# - Fallback: fixed epoch baseline + uptime when HA time is unavailable.
+# On every real time sync, kick off `maybe_catch_up`.
+globals:
+  # 2026-06-01 00:00:00 EST (UTC-5) as epoch seconds.
+  - id: fallback_start_epoch_est
+    type: uint32_t
+    restore_value: false
+    initial_value: '1780290000'
+  - id: fallback_boot_ms
+    type: uint32_t
+    restore_value: false
+    initial_value: '0'
+
 time:
   - platform: homeassistant
     id: ha_time
     on_time_sync:
-      - lambda: |-
-          id(time_synced).publish_state(true);
       - script.execute: maybe_catch_up
   - platform: sntp
     id: sntp_time
@@ -37,9 +48,25 @@ time:
       - 1.pool.ntp.org
       - 2.pool.ntp.org
     on_time_sync:
-      - lambda: |-
-          id(time_synced).publish_state(true);
       - script.execute: maybe_catch_up
+
+sensor:
+  - platform: template
+    name: "Controller time (epoch)"
+    id: effective_now_epoch
+    internal: true
+    update_interval: 1s
+    accuracy_decimals: 0
+    lambda: |-
+      auto ha_now = id(ha_time).now();
+      if (ha_now.is_valid()) {
+        return (float)ha_now.timestamp;
+      }
+      if (id(fallback_boot_ms) == 0) {
+        id(fallback_boot_ms) = millis();
+      }
+      uint32_t elapsed_s = (millis() - id(fallback_boot_ms)) / 1000UL;
+      return (float)(id(fallback_start_epoch_est) + elapsed_s);
 
 binary_sensor:
   - platform: template
@@ -47,6 +74,17 @@ binary_sensor:
     id: time_synced
     device_class: connectivity
     icon: mdi:clock-check
+    lambda: |-
+      // Fallback clock is always available; HA time takes over once valid.
+      return id(effective_now_epoch).state > 0.0f;
+
+  - platform: template
+    name: "HA time available"
+    id: ha_time_available
+    device_class: connectivity
+    icon: mdi:home-clock
+    lambda: |-
+      return id(ha_time).now().is_valid();
 
   - platform: status
     name: "Controller online"

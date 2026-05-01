@@ -638,7 +638,7 @@ number:
       - lambda: |-
           // Stamp the push timestamp so the device can detect stale data.
           if (id(time_synced).state) {
-            id(rain_mm_last_pushed_epoch).publish_state(id(ha_time).now().timestamp);
+            id(rain_mm_last_pushed_epoch).publish_state((uint32_t)id(effective_now_epoch).state);
           }
 
   # --- Retry ---

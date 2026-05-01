@@ -51,19 +51,36 @@ interval:
   - interval: 30s
     then:
       - lambda: |-
-          if (!id(time_synced).state) return;
           if (!id(fallback_schedule_enabled).state) return;
-
-          auto now = id(ha_time).now();
-          if (!now.is_valid()) return;
+          auto ha_now = id(ha_time).now();
+          bool has_ha_time = ha_now.is_valid();
+          uint32_t now_epoch = has_ha_time
+              ? (uint32_t)ha_now.timestamp
+              : (uint32_t)id(effective_now_epoch).state;
+          if (now_epoch == 0) return;
 
           int target_h = (int)id(schedule_start_hour).state;
           int target_m = (int)id(schedule_start_minute).state;
-          if (now.hour != target_h || now.minute != target_m) return;
+          int hour = 0;
+          int minute = 0;
+          int day_of_week = 0;  // 1=Sun..7=Sat
+          if (has_ha_time) {
+            hour = ha_now.hour;
+            minute = ha_now.minute;
+            day_of_week = ha_now.day_of_week;
+          } else {
+            // Fallback wall clock is fixed EST (UTC-5), no DST rules.
+            time_t est_epoch = (time_t)now_epoch - 5 * 3600;
+            struct tm now_est_tm;
+            gmtime_r(&est_epoch, &now_est_tm);
+            hour = now_est_tm.tm_hour;
+            minute = now_est_tm.tm_min;
+            day_of_week = now_est_tm.tm_wday + 1;  // 0=Sun..6=Sat -> 1..7
+          }
+          if (hour != target_h || minute != target_m) return;
 
-          // Day-of-week: ESPHome uses 1=Sunday..7=Saturday.
           bool day_match = false;
-          switch (now.day_of_week) {
+          switch (day_of_week) {
             case 1: day_match = id(sched_sun).state; break;
             case 2: day_match = id(sched_mon).state; break;
             case 3: day_match = id(sched_tue).state; break;
@@ -73,8 +90,6 @@ interval:
             case 7: day_match = id(sched_sat).state; break;
           }
           if (!day_match) return;
-
-          uint32_t now_epoch = now.timestamp;
           if (id(last_fire_epoch) > 0 && now_epoch - id(last_fire_epoch) < 60) return;
           id(last_fire_epoch) = now_epoch;
 
@@ -122,9 +137,9 @@ script:
           if (!id(time_synced).state) return;
           if (!id(fallback_schedule_enabled).state) return;
           if ((int)id(catchup_window_hours).state == 0) return;
-
           auto now = id(ha_time).now();
           if (!now.is_valid()) return;
+
           uint32_t now_epoch = now.timestamp;
           uint32_t window_s = (uint32_t)(id(catchup_window_hours).state * 3600.0f);
           int target_h = (int)id(schedule_start_hour).state;
