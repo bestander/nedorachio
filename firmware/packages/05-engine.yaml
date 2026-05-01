@@ -489,6 +489,12 @@ script:
     parameters:
       is_schedule: bool
     then:
+      # Stamp the watermark before pre-flight so catch-up doesn't double-fire
+      # if pre-flight fails.
+      - lambda: |-
+          if (id(time_synced).state) {
+            id(last_run_started_epoch) = id(ha_time).now().timestamp;
+          }
       - script.execute:
           id: run_pre_flight
           is_schedule: !lambda 'return is_schedule;'

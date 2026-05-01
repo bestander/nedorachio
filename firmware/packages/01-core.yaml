@@ -21,14 +21,15 @@ ota:
   - platform: esphome
     password: !secret ota_password
 
-# Two time sources; whichever syncs first wins.
-# NOTE: catch-up trigger added in Phase 5.2 once `maybe_catch_up` script exists.
+# Two time sources; whichever syncs first wins. On every sync, kick off
+# `maybe_catch_up` (mode: single, idempotent — won't double-fire).
 time:
   - platform: homeassistant
     id: ha_time
     on_time_sync:
       - lambda: |-
           id(time_synced).publish_state(true);
+      - script.execute: maybe_catch_up
   - platform: sntp
     id: sntp_time
     servers:
@@ -38,6 +39,7 @@ time:
     on_time_sync:
       - lambda: |-
           id(time_synced).publish_state(true);
+      - script.execute: maybe_catch_up
 
 binary_sensor:
   - platform: template
