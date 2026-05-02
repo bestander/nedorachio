@@ -23,10 +23,12 @@ ota:
 
 # Time sources:
 # - Primary: HA time (`ha_time`) once available.
-# - Fallback: fixed epoch baseline + uptime when HA time is unavailable.
-# On every real time sync, kick off `maybe_catch_up`.
+# - Fallback: max(persisted last_known_epoch, hardcoded baseline) + uptime.
+#   `last_known_epoch` is rewritten hourly while HA time is valid, so after a
+#   reboot the controller resumes time within ~1h of reality.
 globals:
-  # 2026-06-01 00:00:00 EST (UTC-5) as epoch seconds.
+  # 2026-06-01 00:00:00 EST (UTC-5) as epoch seconds. Used only on the very
+  # first boot before any HA sync has ever happened.
   - id: fallback_start_epoch_est
     type: uint32_t
     restore_value: false
@@ -35,20 +37,38 @@ globals:
     type: uint32_t
     restore_value: false
     initial_value: '0'
+  # Persisted to NVS hourly while HA time is valid. Survives power loss so the
+  # fallback clock can pick up roughly where it left off instead of jumping back.
+  - id: last_known_epoch
+    type: uint32_t
+    restore_value: true
+    initial_value: '0'
+  # Baseline locked in at first fallback-clock read this boot.
+  - id: fallback_baseline_epoch
+    type: uint32_t
+    restore_value: false
+    initial_value: '0'
 
 time:
   - platform: homeassistant
     id: ha_time
-    on_time_sync:
-      - script.execute: maybe_catch_up
   - platform: sntp
     id: sntp_time
     servers:
       - 0.pool.ntp.org
       - 1.pool.ntp.org
       - 2.pool.ntp.org
-    on_time_sync:
-      - script.execute: maybe_catch_up
+
+# Persist a clock anchor every hour while HA time is valid. NVS wear is
+# bounded (~9k writes/year vs. wear-leveled budget of millions).
+interval:
+  - interval: 1h
+    then:
+      - lambda: |-
+          auto ha_now = id(ha_time).now();
+          if (ha_now.is_valid()) {
+            id(last_known_epoch) = (uint32_t)ha_now.timestamp;
+          }
 
 sensor:
   - platform: template
@@ -64,9 +84,14 @@ sensor:
       }
       if (id(fallback_boot_ms) == 0) {
         id(fallback_boot_ms) = millis();
+        uint32_t baseline = id(fallback_start_epoch_est);
+        if (id(last_known_epoch) > baseline) {
+          baseline = id(last_known_epoch);
+        }
+        id(fallback_baseline_epoch) = baseline;
       }
       uint32_t elapsed_s = (millis() - id(fallback_boot_ms)) / 1000UL;
-      return (float)(id(fallback_start_epoch_est) + elapsed_s);
+      return (float)(id(fallback_baseline_epoch) + elapsed_s);
 
 binary_sensor:
   - platform: template

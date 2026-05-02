@@ -29,7 +29,7 @@ cards:
       - entity: sensor.nedorachio_currently_running_zone
       - entity: sensor.nedorachio_current_phase_remaining_s
       - entity: sensor.nedorachio_run_progress
-      - entity: sensor.nedorachio_next_planned_run_epoch
+      - entity: sensor.nedorachio_next_due_zone
       - entity: sensor.nedorachio_last_run_outcome
 
   - type: glance
@@ -48,6 +48,8 @@ cards:
       - entity: number.nedorachio_zone_1_total_minutes
       - entity: number.nedorachio_zone_1_cycle_minutes
       - entity: number.nedorachio_zone_1_soak_minutes
+      - entity: number.nedorachio_zone_1_min_interval_hours
+      - entity: sensor.nedorachio_zone_1_last_finished_epoch
       - entity: button.nedorachio_run_now_zone_1
       - entity: sensor.nedorachio_zone_1_last_gallons
       - entity: sensor.nedorachio_zone_1_run_count
@@ -60,6 +62,8 @@ cards:
       - entity: number.nedorachio_zone_2_total_minutes
       - entity: number.nedorachio_zone_2_cycle_minutes
       - entity: number.nedorachio_zone_2_soak_minutes
+      - entity: number.nedorachio_zone_2_min_interval_hours
+      - entity: sensor.nedorachio_zone_2_last_finished_epoch
       - entity: button.nedorachio_run_now_zone_2
       - entity: sensor.nedorachio_zone_2_last_gallons
       - entity: sensor.nedorachio_zone_2_run_count
@@ -72,6 +76,8 @@ cards:
       - entity: number.nedorachio_zone_3_total_minutes
       - entity: number.nedorachio_zone_3_cycle_minutes
       - entity: number.nedorachio_zone_3_soak_minutes
+      - entity: number.nedorachio_zone_3_min_interval_hours
+      - entity: sensor.nedorachio_zone_3_last_finished_epoch
       - entity: button.nedorachio_run_now_zone_3
       - entity: sensor.nedorachio_zone_3_last_gallons
       - entity: sensor.nedorachio_zone_3_run_count
@@ -84,6 +90,8 @@ cards:
       - entity: number.nedorachio_zone_4_total_minutes
       - entity: number.nedorachio_zone_4_cycle_minutes
       - entity: number.nedorachio_zone_4_soak_minutes
+      - entity: number.nedorachio_zone_4_min_interval_hours
+      - entity: sensor.nedorachio_zone_4_last_finished_epoch
       - entity: button.nedorachio_run_now_zone_4
       - entity: sensor.nedorachio_zone_4_last_gallons
       - entity: sensor.nedorachio_zone_4_run_count
@@ -112,7 +120,6 @@ cards:
       - entity: number.nedorachio_inter_zone_delay_seconds
       - entity: number.nedorachio_retry_count
       - entity: number.nedorachio_retry_delay_seconds
-      - entity: number.nedorachio_catch_up_window_hours
       - entity: number.nedorachio_rain_hold_hours_after_sensor
       - entity: number.nedorachio_rain_mm_threshold_48h
       - entity: number.nedorachio_rain_hold_hours_after_forecast
@@ -120,10 +127,5 @@ cards:
       - entity: switch.nedorachio_high_pressure_cancels_run
       - entity: number.nedorachio_schedule_start_hour
       - entity: number.nedorachio_schedule_start_minute
-      - entity: switch.nedorachio_schedule_sunday
-      - entity: switch.nedorachio_schedule_monday
-      - entity: switch.nedorachio_schedule_tuesday
-      - entity: switch.nedorachio_schedule_wednesday
-      - entity: switch.nedorachio_schedule_thursday
-      - entity: switch.nedorachio_schedule_friday
-      - entity: switch.nedorachio_schedule_saturday
+      - entity: number.nedorachio_schedule_end_hour
+      - entity: number.nedorachio_schedule_end_minute

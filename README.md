@@ -3,13 +3,16 @@
 Home-Assistant-controlled irrigation controller built on an 8-relay
 ESP32-WROOM-32E development board running ESPHome. Replaces a Rachio.
 
-All irrigation logic — schedules, cycle-and-soak, pre-flight gates, mid-run
-cancels, retries, rain hold, catch-up, stats — lives on the device. Home
+All irrigation logic — per-zone cadence scheduler, cycle-and-soak, pre-flight
+gates, mid-run cancels, retries, rain hold, stats — lives on the device. Home
 Assistant is a thin layer that pushes weather data, surfaces state, and routes
 notifications.
 
-See `docs/superpowers/specs/2026-04-30-nedorachio-irrigation-controller-design.md`
-for the full design and `docs/superpowers/plans/` for the implementation plan.
+> **Note.** The original design doc in
+> `docs/superpowers/specs/2026-04-30-nedorachio-irrigation-controller-design.md`
+> describes a weekly day-of-week schedule with catch-up. That has been replaced
+> by the per-zone cadence model documented below; treat the spec/plan docs as
+> historical context for the engine and safety layer, not the scheduler.
 
 ---
 
@@ -97,7 +100,7 @@ firmware/
     03-sensors.yaml          # rain, flow, pressure
     04-tunables.yaml         # all number/switch entities
     05-engine.yaml           # pre-flight, cycle-and-soak, cancels, retry, sequencing
-    06-schedule.yaml         # weekly fire, skip, catch-up, plan readouts
+    06-schedule.yaml         # cadence evaluator, per-zone last-finished, skip, plan readouts
     07-stats.yaml            # per-zone gallons, runs, durations + rollover
 ```
 
@@ -126,26 +129,51 @@ firmware/
 
 ## Operation
 
+### Scheduling model
+
+Per-zone cadence, not a weekly calendar. Each zone has:
+
+- `zone_N_total_min` / `_cycle_min` / `_soak_min` — duration and cycle/soak
+  shape of one watering.
+- `zone_N_min_interval_hours` — minimum hours between waterings, measured
+  from the **finish** of the previous run (default 48h).
+
+A global watering window (`schedule_start_hour:minute` →
+`schedule_end_hour:minute`, default `00:00 → 08:00`) gates *when* a zone may
+start. End < start wraps midnight (e.g. `22:00 → 06:00`).
+
+Every 60s the cadence evaluator picks the lowest-numbered enabled zone whose
+cadence is due, runs pre-flight, and fires it. Zones run one at a time;
+`sensor.next_due_zone` shows what's queued.
+
 ### A normal day
 
-- At `schedule_start_hour:schedule_start_minute` on enabled days, the device
-  runs the pre-flight gate.
-- If pre-flight passes, `run_full_cycle` iterates the zones in
-  `zones_enabled_bitmask` (default: 1..4). Each zone runs through
-  cycle-and-soak: `cycle_min` on, `soak_min` off, repeated until
-  `total_min` accrues.
-- Inter-zone transitions enforce `inter_zone_delay_seconds` (default 2s) to
-  reduce water hammer.
+- Inside the watering window, the evaluator finds zone *N* due (now ≥
+  `zone_N_last_finished_epoch + zone_N_min_interval_hours·3600`).
+- Pre-flight runs (master enable, time sync, rain sensor, rain forecast,
+  static pressure, alarm-latch). If it fails, the cycle is aborted and the
+  reason is logged.
+- The retry-aware single-zone runner executes cycle-and-soak: `cycle_min` on,
+  `soak_min` off, repeated until `total_min` accrues.
+- When the zone finishes (or is cancelled, or hits the runtime cap),
+  `zone_N_last_finished_epoch` is stamped and persisted to NVS — the cadence
+  resets from that point.
+- The next evaluator tick picks the next eligible zone, if any. If the window
+  closes mid-run, the in-progress zone finishes; no new zone starts until the
+  window reopens.
 - Per-zone stats accumulate to `zone_N_gallons_total`, `zone_N_run_count`,
   etc.; daily/monthly aggregates roll over at midnight.
 
 ### Manual run
 
 - `button.nedorachio_run_now_zone_N` runs zone N once with its configured
-  cycle/soak/total.
+  cycle/soak/total. Manual runs **reset the cadence** (the
+  `last_finished_epoch` is stamped just like a scheduled run).
 - `switch.nedorachio_zone_N` is the raw on/off control (still gated by the
-  master enable / e-stop / single-zone invariant).
-- `button.nedorachio_run_full_cycle` runs the full cycle on demand.
+  master enable / e-stop / single-zone invariant). Toggling off also resets
+  the cadence.
+- `button.nedorachio_run_full_cycle` runs every enabled zone in sequence on
+  demand, ignoring cadence and window — useful for spring start-up.
 
 ### Local controls
 
@@ -167,9 +195,23 @@ Two physical buttons and an LED on the device:
 
 ### Skipping a run
 
-- `button.nedorachio_skip_next_run` consumes the *next* scheduled fire.
-- `switch.nedorachio_fallback_schedule_enabled` disables the schedule
-  indefinitely.
+- `button.nedorachio_skip_next_run` consumes the *next* cadence-driven fire
+  (the next zone the evaluator would otherwise start).
+- `switch.nedorachio_fallback_schedule_enabled` disables the cadence
+  evaluator indefinitely (manual runs and `run_full_cycle` still work).
+
+### Clock survival across power loss
+
+The fallback clock uses the highest of:
+
+- `last_known_epoch` — written to NVS once an hour while HA time is valid.
+- `fallback_start_epoch_est` — hardcoded baseline (2026-06-01 00:00 EST), used
+  only on the very first boot before any HA sync.
+
+After a reboot without WiFi, the clock resumes within ~1h of reality, so
+cadence checks (which are in hours) stay correct. Per-zone
+`last_finished_epoch` is also NVS-persisted, so a watering that completed
+just before a power loss isn't forgotten.
 
 ### Alarm reference
 
@@ -194,7 +236,7 @@ cleared via `button.nedorachio_clear_fault`.
 2. Set `zones_enabled_bitmask` to include bit 4. E.g. zones 1..5 enabled =
    `0b00011111 = 31`.
 3. Tune `zone_5_total_min`, `zone_5_cycle_min`, `zone_5_soak_min`,
-   `zone_5_min_flow_gpm`, `zone_5_max_flow_gpm`,
+   `zone_5_min_interval_hours`, `zone_5_min_flow_gpm`, `zone_5_max_flow_gpm`,
    `zone_5_max_runtime_min`.
 
 ---

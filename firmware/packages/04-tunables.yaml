@@ -663,18 +663,6 @@ number:
     step: 1
     unit_of_measurement: "s"
 
-  # --- Catch-up ---
-  - platform: template
-    name: "Catch-up window hours"
-    id: catchup_window_hours
-    optimistic: true
-    restore_value: true
-    initial_value: 6
-    min_value: 0
-    max_value: 48
-    step: 1
-    unit_of_measurement: "h"
-
   # --- Local controls ---
   - platform: template
     name: "Manual run max minutes"
@@ -699,13 +687,16 @@ number:
     step: 1
     unit_of_measurement: "s"
 
-  # --- Schedule start time (split because ESPHome has no `time` number entity) ---
+  # --- Watering window (cadence-based scheduler) ---
+  # The evaluator only *starts* a zone inside [start, end). A zone already
+  # running when the window closes is allowed to finish (no hard cut).
+  # If end < start the window wraps midnight (e.g. 22 → 6).
   - platform: template
     name: "Schedule start hour"
     id: schedule_start_hour
     optimistic: true
     restore_value: true
-    initial_value: 6
+    initial_value: 0
     min_value: 0
     max_value: 23
     step: 1
@@ -719,6 +710,109 @@ number:
     min_value: 0
     max_value: 59
     step: 1
+
+  - platform: template
+    name: "Schedule end hour"
+    id: schedule_end_hour
+    optimistic: true
+    restore_value: true
+    initial_value: 8
+    min_value: 0
+    max_value: 23
+    step: 1
+
+  - platform: template
+    name: "Schedule end minute"
+    id: schedule_end_minute
+    optimistic: true
+    restore_value: true
+    initial_value: 0
+    min_value: 0
+    max_value: 59
+    step: 1
+
+  # Per-zone minimum hours between waterings. Cadence is measured from the
+  # *finish* of the previous run (manual or scheduled — both reset the timer).
+  - platform: template
+    name: "Zone 1 min interval hours"
+    id: zone_1_min_interval_hours
+    optimistic: true
+    restore_value: true
+    initial_value: 48
+    min_value: 1
+    max_value: 720
+    step: 1
+    unit_of_measurement: "h"
+  - platform: template
+    name: "Zone 2 min interval hours"
+    id: zone_2_min_interval_hours
+    optimistic: true
+    restore_value: true
+    initial_value: 48
+    min_value: 1
+    max_value: 720
+    step: 1
+    unit_of_measurement: "h"
+  - platform: template
+    name: "Zone 3 min interval hours"
+    id: zone_3_min_interval_hours
+    optimistic: true
+    restore_value: true
+    initial_value: 48
+    min_value: 1
+    max_value: 720
+    step: 1
+    unit_of_measurement: "h"
+  - platform: template
+    name: "Zone 4 min interval hours"
+    id: zone_4_min_interval_hours
+    optimistic: true
+    restore_value: true
+    initial_value: 48
+    min_value: 1
+    max_value: 720
+    step: 1
+    unit_of_measurement: "h"
+  - platform: template
+    name: "Zone 5 min interval hours"
+    id: zone_5_min_interval_hours
+    optimistic: true
+    restore_value: true
+    initial_value: 48
+    min_value: 1
+    max_value: 720
+    step: 1
+    unit_of_measurement: "h"
+  - platform: template
+    name: "Zone 6 min interval hours"
+    id: zone_6_min_interval_hours
+    optimistic: true
+    restore_value: true
+    initial_value: 48
+    min_value: 1
+    max_value: 720
+    step: 1
+    unit_of_measurement: "h"
+  - platform: template
+    name: "Zone 7 min interval hours"
+    id: zone_7_min_interval_hours
+    optimistic: true
+    restore_value: true
+    initial_value: 48
+    min_value: 1
+    max_value: 720
+    step: 1
+    unit_of_measurement: "h"
+  - platform: template
+    name: "Zone 8 min interval hours"
+    id: zone_8_min_interval_hours
+    optimistic: true
+    restore_value: true
+    initial_value: 48
+    min_value: 1
+    max_value: 720
+    step: 1
+    unit_of_measurement: "h"
 
   # Internal: timestamp of the last `rain_mm_last_48h` write. Used by the
   # pre-flight gate's TTL check so stale weather data fails open.
@@ -743,44 +837,7 @@ number:
     max_value: 255
     step: 1
 
-# Schedule day-of-week mask: 7 booleans (Sun..Sat). True = run that day.
 switch:
-  - platform: template
-    name: "Schedule Sunday"
-    id: sched_sun
-    optimistic: true
-    restore_mode: RESTORE_DEFAULT_OFF
-  - platform: template
-    name: "Schedule Monday"
-    id: sched_mon
-    optimistic: true
-    restore_mode: RESTORE_DEFAULT_OFF
-  - platform: template
-    name: "Schedule Tuesday"
-    id: sched_tue
-    optimistic: true
-    restore_mode: RESTORE_DEFAULT_ON
-  - platform: template
-    name: "Schedule Wednesday"
-    id: sched_wed
-    optimistic: true
-    restore_mode: RESTORE_DEFAULT_OFF
-  - platform: template
-    name: "Schedule Thursday"
-    id: sched_thu
-    optimistic: true
-    restore_mode: RESTORE_DEFAULT_OFF
-  - platform: template
-    name: "Schedule Friday"
-    id: sched_fri
-    optimistic: true
-    restore_mode: RESTORE_DEFAULT_OFF
-  - platform: template
-    name: "Schedule Saturday"
-    id: sched_sat
-    optimistic: true
-    restore_mode: RESTORE_DEFAULT_ON
-
   - platform: template
     name: "Fallback schedule enabled"
     id: fallback_schedule_enabled

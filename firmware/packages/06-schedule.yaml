@@ -1,4 +1,11 @@
-# Weekly schedule fire + skip + catch-up + plan readouts.
+# Cadence-based scheduler.
+#
+# Each zone has a `min_interval_hours` (how long to wait between waterings)
+# and the system watering window is global (`schedule_start_*`/`schedule_end_*`).
+# Every 60s the evaluator picks the first enabled zone whose cadence is due,
+# checks the window + safety gates, and fires it. Zones run one-at-a-time;
+# manual runs (HA toggle, local buttons) reset the cadence the same way as
+# scheduled runs because the timestamp is stamped in `drive_zone`.
 
 globals:
   - id: skip_next_run_pending
@@ -6,10 +13,6 @@ globals:
     restore_value: true
     initial_value: 'false'
   - id: last_run_started_epoch
-    type: uint32_t
-    restore_value: true
-    initial_value: '0'
-  - id: last_fire_epoch
     type: uint32_t
     restore_value: true
     initial_value: '0'
@@ -36,6 +39,12 @@ globals:
     restore_value: true
     initial_value: '""'
 
+  # Internal: zone the evaluator picked for the current tick.
+  - id: due_zone_id
+    type: int
+    restore_value: false
+    initial_value: '0'
+
 button:
   - platform: template
     name: "Skip next run"
@@ -44,143 +53,146 @@ button:
     on_press:
       - lambda: |-
           id(skip_next_run_pending) = true;
-          ESP_LOGI("schedule", "Next run will be skipped.");
+          ESP_LOGI("schedule", "Next due zone will be skipped.");
 
-# Fire every 30s; check whether this is a scheduled fire time.
+# Cadence evaluator. Runs every 60s; cheap when nothing is due.
 interval:
-  - interval: 30s
+  - interval: 60s
     then:
       - lambda: |-
           if (!id(fallback_schedule_enabled).state) return;
-          auto ha_now = id(ha_time).now();
-          bool has_ha_time = ha_now.is_valid();
-          uint32_t now_epoch = has_ha_time
-              ? (uint32_t)ha_now.timestamp
-              : (uint32_t)id(effective_now_epoch).state;
+          if (id(currently_on_zone) != 0) return;
+          if (id(run_one_zone).is_running()) return;
+          if (id(run_one_zone_with_retry).is_running()) return;
+          if (id(run_full_cycle).is_running()) return;
+          if (id(schedule_fire_handler).is_running()) return;
+
+          uint32_t now_epoch = (uint32_t)id(effective_now_epoch).state;
           if (now_epoch == 0) return;
 
-          int target_h = (int)id(schedule_start_hour).state;
-          int target_m = (int)id(schedule_start_minute).state;
-          int hour = 0;
-          int minute = 0;
-          int day_of_week = 0;  // 1=Sun..7=Sat
-          if (has_ha_time) {
+          // Compute wall-clock hour/minute from HA time when valid, else
+          // fallback EST (matches the offline clock in 01-core).
+          int hour = 0, minute = 0;
+          auto ha_now = id(ha_time).now();
+          if (ha_now.is_valid()) {
             hour = ha_now.hour;
             minute = ha_now.minute;
-            day_of_week = ha_now.day_of_week;
           } else {
-            // Fallback wall clock is fixed EST (UTC-5), no DST rules.
             time_t est_epoch = (time_t)now_epoch - 5 * 3600;
             struct tm now_est_tm;
             gmtime_r(&est_epoch, &now_est_tm);
             hour = now_est_tm.tm_hour;
             minute = now_est_tm.tm_min;
-            day_of_week = now_est_tm.tm_wday + 1;  // 0=Sun..6=Sat -> 1..7
           }
-          if (hour != target_h || minute != target_m) return;
 
-          bool day_match = false;
-          switch (day_of_week) {
-            case 1: day_match = id(sched_sun).state; break;
-            case 2: day_match = id(sched_mon).state; break;
-            case 3: day_match = id(sched_tue).state; break;
-            case 4: day_match = id(sched_wed).state; break;
-            case 5: day_match = id(sched_thu).state; break;
-            case 6: day_match = id(sched_fri).state; break;
-            case 7: day_match = id(sched_sat).state; break;
+          int now_min = hour * 60 + minute;
+          int start_min = (int)id(schedule_start_hour).state * 60 + (int)id(schedule_start_minute).state;
+          int end_min = (int)id(schedule_end_hour).state * 60 + (int)id(schedule_end_minute).state;
+          if (start_min == end_min) return;  // zero-length window
+          bool in_window = (start_min < end_min)
+              ? (now_min >= start_min && now_min < end_min)
+              : (now_min >= start_min || now_min < end_min);
+          if (!in_window) return;
+
+          int mask = (int)id(zones_enabled_bitmask).state;
+          int picked = 0;
+          for (int zid = 1; zid <= 8 && picked == 0; zid++) {
+            if (((mask >> (zid - 1)) & 0x1) == 0) continue;
+
+            uint32_t last_finished = 0;
+            float interval_h = 0;
+            switch (zid) {
+              case 1: last_finished = id(zone_1_last_finished_epoch); interval_h = id(zone_1_min_interval_hours).state; break;
+              case 2: last_finished = id(zone_2_last_finished_epoch); interval_h = id(zone_2_min_interval_hours).state; break;
+              case 3: last_finished = id(zone_3_last_finished_epoch); interval_h = id(zone_3_min_interval_hours).state; break;
+              case 4: last_finished = id(zone_4_last_finished_epoch); interval_h = id(zone_4_min_interval_hours).state; break;
+              case 5: last_finished = id(zone_5_last_finished_epoch); interval_h = id(zone_5_min_interval_hours).state; break;
+              case 6: last_finished = id(zone_6_last_finished_epoch); interval_h = id(zone_6_min_interval_hours).state; break;
+              case 7: last_finished = id(zone_7_last_finished_epoch); interval_h = id(zone_7_min_interval_hours).state; break;
+              case 8: last_finished = id(zone_8_last_finished_epoch); interval_h = id(zone_8_min_interval_hours).state; break;
+            }
+            uint32_t interval_s = (uint32_t)(interval_h * 3600.0f);
+            // last_finished == 0 → never run since flash was wiped → due now.
+            bool due = (last_finished == 0) || (now_epoch >= last_finished + interval_s);
+            if (due) picked = zid;
           }
-          if (!day_match) return;
-          if (id(last_fire_epoch) > 0 && now_epoch - id(last_fire_epoch) < 60) return;
-          id(last_fire_epoch) = now_epoch;
+          if (picked == 0) return;
 
           if (id(skip_next_run_pending)) {
             id(skip_next_run_pending) = false;
-            ESP_LOGI("schedule", "Skip flag consumed; not firing this run.");
+            ESP_LOGI("schedule", "Skip flag consumed; not firing zone %d.", picked);
             return;
           }
-          if (id(currently_on_zone) != 0) {
-            ESP_LOGI("schedule", "Zone already on; fallback aborted.");
-            return;
-          }
-
-          // Defer to ESPHome script execution outside the lambda.
-          id(schedule_should_fire).publish_state(true);
-
-binary_sensor:
-  - platform: template
-    name: "Schedule fire pending"
-    id: schedule_should_fire
-    internal: true
-    on_press:
-      - script.execute: schedule_fire_handler
+          id(due_zone_id) = picked;
+      - if:
+          condition:
+            lambda: 'return id(due_zone_id) != 0;'
+          then:
+            - script.execute: schedule_fire_handler
 
 script:
   - id: schedule_fire_handler
     mode: single
     then:
+      # Pre-flight gates (rain hold, pressure, etc.) — same path as the
+      # "Run full cycle" button uses, with is_schedule=true so the
+      # fallback_schedule_enabled gate also applies.
       - script.execute:
-          id: run_full_cycle
+          id: run_pre_flight
           is_schedule: true
       - wait_until:
           not:
-            script.is_running: run_full_cycle
-      - binary_sensor.template.publish: { id: schedule_should_fire, state: false }
-
-  # On first NTP sync, find the most recent scheduled fire within
-  # `catchup_window_hours`. If we missed it (last_run_started_epoch < that fire),
-  # fire it now. Idempotent within a boot — `last_run_started_epoch` updates
-  # the moment a run begins so re-syncs don't double-fire.
-  - id: maybe_catch_up
-    mode: single
-    then:
+            script.is_running: run_pre_flight
+      - if:
+          condition:
+            lambda: 'return !id(pre_flight_passed);'
+          then:
+            - logger.log: "Cadence fire aborted: pre-flight failed."
+            - lambda: 'id(due_zone_id) = 0;'
+            - script.stop: schedule_fire_handler
       - lambda: |-
-          if (!id(time_synced).state) return;
-          if (!id(fallback_schedule_enabled).state) return;
-          if ((int)id(catchup_window_hours).state == 0) return;
-          auto now = id(ha_time).now();
-          if (!now.is_valid()) return;
-
-          uint32_t now_epoch = now.timestamp;
-          uint32_t window_s = (uint32_t)(id(catchup_window_hours).state * 3600.0f);
-          int target_h = (int)id(schedule_start_hour).state;
-          int target_m = (int)id(schedule_start_minute).state;
-
-          int max_days = (int)((window_s / 86400) + 1);
-          for (int d = 0; d <= max_days; d++) {
-            time_t cand = (time_t)now_epoch - d * 86400;
-            struct tm cand_tm;
-            localtime_r(&cand, &cand_tm);
-            cand_tm.tm_hour = target_h;
-            cand_tm.tm_min = target_m;
-            cand_tm.tm_sec = 0;
-            time_t fire_epoch_t = mktime(&cand_tm);
-            uint32_t fire_epoch = (uint32_t)fire_epoch_t;
-            if (fire_epoch > now_epoch) continue;
-            if (now_epoch - fire_epoch > window_s) return;
-
-            int dow = cand_tm.tm_wday + 1;   // tm_wday: 0=Sun..6=Sat → 1..7
-            bool day_match = false;
-            switch (dow) {
-              case 1: day_match = id(sched_sun).state; break;
-              case 2: day_match = id(sched_mon).state; break;
-              case 3: day_match = id(sched_tue).state; break;
-              case 4: day_match = id(sched_wed).state; break;
-              case 5: day_match = id(sched_thu).state; break;
-              case 6: day_match = id(sched_fri).state; break;
-              case 7: day_match = id(sched_sat).state; break;
-            }
-            if (!day_match) continue;
-
-            if (id(last_run_started_epoch) >= fire_epoch) {
-              ESP_LOGI("catchup", "Most recent fire was %us ago; already ran.",
-                (unsigned)(now_epoch - fire_epoch));
-              return;
-            }
-            ESP_LOGW("catchup", "Catching up missed fire from %us ago.",
-              (unsigned)(now_epoch - fire_epoch));
-            id(schedule_should_fire).publish_state(true);
-            return;
+          if (id(time_synced).state) {
+            id(last_run_started_epoch) = (uint32_t)id(effective_now_epoch).state;
           }
+          ESP_LOGI("schedule", "Firing zone %d (cadence due).", id(due_zone_id));
+      # Stage params and fire the retry-aware single-zone runner.
+      - lambda: |-
+          int zid = id(due_zone_id);
+          float t = 0, c = 0, s = 0;
+          switch (zid) {
+            case 1: t = id(zone_1_total_min).state; c = id(zone_1_cycle_min).state; s = id(zone_1_soak_min).state; break;
+            case 2: t = id(zone_2_total_min).state; c = id(zone_2_cycle_min).state; s = id(zone_2_soak_min).state; break;
+            case 3: t = id(zone_3_total_min).state; c = id(zone_3_cycle_min).state; s = id(zone_3_soak_min).state; break;
+            case 4: t = id(zone_4_total_min).state; c = id(zone_4_cycle_min).state; s = id(zone_4_soak_min).state; break;
+            case 5: t = id(zone_5_total_min).state; c = id(zone_5_cycle_min).state; s = id(zone_5_soak_min).state; break;
+            case 6: t = id(zone_6_total_min).state; c = id(zone_6_cycle_min).state; s = id(zone_6_soak_min).state; break;
+            case 7: t = id(zone_7_total_min).state; c = id(zone_7_cycle_min).state; s = id(zone_7_soak_min).state; break;
+            case 8: t = id(zone_8_total_min).state; c = id(zone_8_cycle_min).state; s = id(zone_8_soak_min).state; break;
+          }
+          id(staged_total_min) = t;
+          id(staged_cycle_min) = c;
+          id(staged_soak_min)  = s;
+      - script.execute:
+          id: run_one_zone_with_retry
+          zone_id: !lambda 'return id(due_zone_id);'
+          total_min: !lambda 'return id(staged_total_min);'
+          cycle_min: !lambda 'return id(staged_cycle_min);'
+          soak_min:  !lambda 'return id(staged_soak_min);'
+      - wait_until:
+          not:
+            script.is_running: run_one_zone_with_retry
+      - lambda: |-
+          id(current_phase_str) = id(any_alarm_latched) ? "fault" : "idle";
+          id(phase_total_ms) = 0;
+          if (id(time_synced).state) {
+            id(last_run_finished_epoch) = (uint32_t)id(effective_now_epoch).state;
+          }
+          if (id(any_alarm_latched)) {
+            id(last_run_outcome_str) = "cancelled_" + id(run_cancel_cause);
+          } else {
+            id(last_run_outcome_str) = "completed";
+          }
+          id(due_zone_id) = 0;
 
 text_sensor:
   - platform: template
@@ -225,40 +237,33 @@ sensor:
       if (id(run_total_min) == 0) return 0.0f;
       return (id(run_minutes_done) / id(run_total_min)) * 100.0f;
 
+  # Next-due zone (1..8), or 0 if nothing eligible right now ignoring window.
+  # Surfaces "what's queued" to HA without re-implementing the window math.
   - platform: template
-    name: "Next planned run (epoch)"
-    id: next_planned_run
-    update_interval: 60s
+    name: "Next due zone"
+    id: next_due_zone
+    update_interval: 30s
     accuracy_decimals: 0
-    unit_of_measurement: "s"
     lambda: |-
-      if (!id(time_synced).state) return 0.0f;
-      auto now = id(ha_time).now();
-      if (!now.is_valid()) return 0.0f;
-      uint32_t now_epoch = now.timestamp;
-      int target_h = (int)id(schedule_start_hour).state;
-      int target_m = (int)id(schedule_start_minute).state;
-      for (int d = 0; d < 8; d++) {
-        time_t cand = (time_t)now_epoch + d * 86400;
-        struct tm cand_tm;
-        localtime_r(&cand, &cand_tm);
-        cand_tm.tm_hour = target_h;
-        cand_tm.tm_min = target_m;
-        cand_tm.tm_sec = 0;
-        time_t fire = mktime(&cand_tm);
-        if ((uint32_t)fire <= now_epoch) continue;
-        int dow = cand_tm.tm_wday + 1;
-        bool match = false;
-        switch (dow) {
-          case 1: match = id(sched_sun).state; break;
-          case 2: match = id(sched_mon).state; break;
-          case 3: match = id(sched_tue).state; break;
-          case 4: match = id(sched_wed).state; break;
-          case 5: match = id(sched_thu).state; break;
-          case 6: match = id(sched_fri).state; break;
-          case 7: match = id(sched_sat).state; break;
+      uint32_t now_epoch = (uint32_t)id(effective_now_epoch).state;
+      if (now_epoch == 0) return 0.0f;
+      int mask = (int)id(zones_enabled_bitmask).state;
+      for (int zid = 1; zid <= 8; zid++) {
+        if (((mask >> (zid - 1)) & 0x1) == 0) continue;
+        uint32_t last_finished = 0;
+        float interval_h = 0;
+        switch (zid) {
+          case 1: last_finished = id(zone_1_last_finished_epoch); interval_h = id(zone_1_min_interval_hours).state; break;
+          case 2: last_finished = id(zone_2_last_finished_epoch); interval_h = id(zone_2_min_interval_hours).state; break;
+          case 3: last_finished = id(zone_3_last_finished_epoch); interval_h = id(zone_3_min_interval_hours).state; break;
+          case 4: last_finished = id(zone_4_last_finished_epoch); interval_h = id(zone_4_min_interval_hours).state; break;
+          case 5: last_finished = id(zone_5_last_finished_epoch); interval_h = id(zone_5_min_interval_hours).state; break;
+          case 6: last_finished = id(zone_6_last_finished_epoch); interval_h = id(zone_6_min_interval_hours).state; break;
+          case 7: last_finished = id(zone_7_last_finished_epoch); interval_h = id(zone_7_min_interval_hours).state; break;
+          case 8: last_finished = id(zone_8_last_finished_epoch); interval_h = id(zone_8_min_interval_hours).state; break;
         }
-        if (match) return (float)fire;
+        uint32_t interval_s = (uint32_t)(interval_h * 3600.0f);
+        if (last_finished == 0 || now_epoch >= last_finished + interval_s) return (float)zid;
       }
       return 0.0f;
 
@@ -275,3 +280,53 @@ sensor:
     update_interval: 60s
     accuracy_decimals: 0
     lambda: 'return (float)id(last_run_finished_epoch);'
+
+  # Per-zone "last finished" sensors so HA can show "watered N hours ago".
+  - platform: template
+    name: "Zone 1 last finished (epoch)"
+    id: zone_1_last_finished_at
+    update_interval: 60s
+    accuracy_decimals: 0
+    lambda: 'return (float)id(zone_1_last_finished_epoch);'
+  - platform: template
+    name: "Zone 2 last finished (epoch)"
+    id: zone_2_last_finished_at
+    update_interval: 60s
+    accuracy_decimals: 0
+    lambda: 'return (float)id(zone_2_last_finished_epoch);'
+  - platform: template
+    name: "Zone 3 last finished (epoch)"
+    id: zone_3_last_finished_at
+    update_interval: 60s
+    accuracy_decimals: 0
+    lambda: 'return (float)id(zone_3_last_finished_epoch);'
+  - platform: template
+    name: "Zone 4 last finished (epoch)"
+    id: zone_4_last_finished_at
+    update_interval: 60s
+    accuracy_decimals: 0
+    lambda: 'return (float)id(zone_4_last_finished_epoch);'
+  - platform: template
+    name: "Zone 5 last finished (epoch)"
+    id: zone_5_last_finished_at
+    update_interval: 60s
+    accuracy_decimals: 0
+    lambda: 'return (float)id(zone_5_last_finished_epoch);'
+  - platform: template
+    name: "Zone 6 last finished (epoch)"
+    id: zone_6_last_finished_at
+    update_interval: 60s
+    accuracy_decimals: 0
+    lambda: 'return (float)id(zone_6_last_finished_epoch);'
+  - platform: template
+    name: "Zone 7 last finished (epoch)"
+    id: zone_7_last_finished_at
+    update_interval: 60s
+    accuracy_decimals: 0
+    lambda: 'return (float)id(zone_7_last_finished_epoch);'
+  - platform: template
+    name: "Zone 8 last finished (epoch)"
+    id: zone_8_last_finished_at
+    update_interval: 60s
+    accuracy_decimals: 0
+    lambda: 'return (float)id(zone_8_last_finished_epoch);'
