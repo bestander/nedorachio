@@ -205,8 +205,13 @@ Two physical buttons and an LED on the device:
 The fallback clock uses the highest of:
 
 - `last_known_epoch` — written to NVS once an hour while HA time is valid.
-- `fallback_start_epoch_est` — hardcoded baseline (2026-06-01 00:00 EST), used
+- `fallback_start_epoch_est` — hardcoded baseline (2026-06-01 11:00 EST), used
   only on the very first boot before any HA sync.
+
+On a brand-new device with no persisted cadence history, each
+`zone_N_last_finished_epoch` initializes to this same baseline. That means the
+controller behaves as if each zone was last watered at the default baseline
+time, rather than treating missing history as "due immediately."
 
 After a reboot without WiFi, the clock resumes within ~1h of reality, so
 cadence checks (which are in hours) stay correct. Per-zone

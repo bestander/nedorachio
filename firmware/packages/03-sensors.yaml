@@ -1,12 +1,12 @@
 # Rain (binary), flow (pulse), pressure (ADC + linear calibration).
 #
-# Replace the placeholder GPIOs and the calibration constants with real values
-# captured during bench prep (see plan Tasks 1.1, 1.2).
+# GPIOs below intentionally avoid relay-control pins on the x8 relay board.
+# Keep these separate from relay pins to prevent accidental cross-triggering.
 
 binary_sensor:
   - platform: gpio
     pin:
-      number: GPIO27
+      number: GPIO18
       mode:
         input: true
         pullup: true
@@ -28,7 +28,7 @@ sensor:
     name: "Flow rate"
     id: flow_rate_gpm
     pin:
-      number: GPIO26
+      number: GPIO19
       mode:
         input: true
         pullup: true

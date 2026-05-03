@@ -8,7 +8,7 @@
 
 output:
   - platform: gpio
-    pin: { number: GPIO14, inverted: false }
+    pin: { number: GPIO4, inverted: false }
     id: led_out
 
 globals:

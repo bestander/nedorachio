@@ -1,34 +1,35 @@
 # 8 zone relays + safety invariants (single-zone-on, runtime cap, boot-safe, e-stop).
 #
-# Placeholder GPIO assignments — verify against the actual board (Task 1.1) and
-# update both the pin numbers and `inverted:` polarity here. Most opto-isolated
-# 8-relay ESP32 boards drive the relay LOW (active-low → `inverted: true`).
+# Relay GPIO map for the ESP32 relay x8 board used by this project:
+# R1->GPIO32, R2->GPIO33, R3->GPIO25, R4->GPIO26,
+# R5->GPIO27, R6->GPIO14, R7->GPIO12, R8->GPIO13.
+# Relay polarity is configured as active-high below (`inverted: false`).
 
 # Backing GPIO outputs (internal, hidden from HA).
 output:
   - platform: gpio
-    pin: { number: GPIO23, inverted: true }
+    pin: { number: GPIO32, inverted: false }
     id: relay_1_out
   - platform: gpio
-    pin: { number: GPIO19, inverted: true }
+    pin: { number: GPIO33, inverted: false }
     id: relay_2_out
   - platform: gpio
-    pin: { number: GPIO18, inverted: true }
+    pin: { number: GPIO25, inverted: false }
     id: relay_3_out
   - platform: gpio
-    pin: { number: GPIO5, inverted: true }
+    pin: { number: GPIO26, inverted: false }
     id: relay_4_out
   - platform: gpio
-    pin: { number: GPIO17, inverted: true }
+    pin: { number: GPIO27, inverted: false }
     id: relay_5_out
   - platform: gpio
-    pin: { number: GPIO16, inverted: true }
+    pin: { number: GPIO14, inverted: false }
     id: relay_6_out
   - platform: gpio
-    pin: { number: GPIO4, inverted: true }
+    pin: { number: GPIO12, inverted: false }
     id: relay_7_out
   - platform: gpio
-    pin: { number: GPIO13, inverted: true }
+    pin: { number: GPIO13, inverted: false }
     id: relay_8_out
 
 # Public per-zone switches. Turning these on routes through the safety layer.
