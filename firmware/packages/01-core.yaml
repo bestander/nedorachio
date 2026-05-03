@@ -27,12 +27,12 @@ ota:
 #   `last_known_epoch` is rewritten hourly while HA time is valid, so after a
 #   reboot the controller resumes time within ~1h of reality.
 globals:
-  # 2026-06-01 00:00:00 EST (UTC-5) as epoch seconds. Used only on the very
+  # 2026-06-01 11:00:00 EST (UTC-5) as epoch seconds. Used only on the very
   # first boot before any HA sync has ever happened.
   - id: fallback_start_epoch_est
     type: uint32_t
     restore_value: false
-    initial_value: '1780290000'
+    initial_value: '1780329600'
   - id: fallback_boot_ms
     type: uint32_t
     restore_value: false

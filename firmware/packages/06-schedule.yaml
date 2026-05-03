@@ -112,8 +112,11 @@ interval:
               case 8: last_finished = id(zone_8_last_finished_epoch); interval_h = id(zone_8_min_interval_hours).state; break;
             }
             uint32_t interval_s = (uint32_t)(interval_h * 3600.0f);
-            // last_finished == 0 → never run since flash was wiped → due now.
-            bool due = (last_finished == 0) || (now_epoch >= last_finished + interval_s);
+            if (last_finished == 0) {
+              // Safety net for unexpected zeroed NVS: treat as baseline date.
+              last_finished = id(fallback_start_epoch_est);
+            }
+            bool due = (now_epoch >= last_finished + interval_s);
             if (due) picked = zid;
           }
           if (picked == 0) return;
@@ -263,7 +266,11 @@ sensor:
           case 8: last_finished = id(zone_8_last_finished_epoch); interval_h = id(zone_8_min_interval_hours).state; break;
         }
         uint32_t interval_s = (uint32_t)(interval_h * 3600.0f);
-        if (last_finished == 0 || now_epoch >= last_finished + interval_s) return (float)zid;
+        if (last_finished == 0) {
+          // Match scheduler behavior when historical value is unexpectedly zero.
+          last_finished = id(fallback_start_epoch_est);
+        }
+        if (now_epoch >= last_finished + interval_s) return (float)zid;
       }
       return 0.0f;
 

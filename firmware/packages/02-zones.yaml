@@ -188,38 +188,40 @@ globals:
   # decide whether a zone is due. Written by `drive_zone` whenever a zone
   # transitions on→off, regardless of whether it was a scheduled run, manual
   # toggle, or local button press. Persisted to NVS so cadence survives reboot.
+  # Default is the same baseline date as `fallback_start_epoch_est` so a fresh
+  # device behaves as if each zone was last watered at that baseline.
   - id: zone_1_last_finished_epoch
     type: uint32_t
     restore_value: true
-    initial_value: '0'
+    initial_value: '1780329600'
   - id: zone_2_last_finished_epoch
     type: uint32_t
     restore_value: true
-    initial_value: '0'
+    initial_value: '1780329600'
   - id: zone_3_last_finished_epoch
     type: uint32_t
     restore_value: true
-    initial_value: '0'
+    initial_value: '1780329600'
   - id: zone_4_last_finished_epoch
     type: uint32_t
     restore_value: true
-    initial_value: '0'
+    initial_value: '1780329600'
   - id: zone_5_last_finished_epoch
     type: uint32_t
     restore_value: true
-    initial_value: '0'
+    initial_value: '1780329600'
   - id: zone_6_last_finished_epoch
     type: uint32_t
     restore_value: true
-    initial_value: '0'
+    initial_value: '1780329600'
   - id: zone_7_last_finished_epoch
     type: uint32_t
     restore_value: true
-    initial_value: '0'
+    initial_value: '1780329600'
   - id: zone_8_last_finished_epoch
     type: uint32_t
     restore_value: true
-    initial_value: '0'
+    initial_value: '1780329600'
 
 # Buttons exposed to HA.
 button:
