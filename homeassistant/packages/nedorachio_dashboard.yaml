@@ -14,18 +14,20 @@ cards:
         name: Pressure (PSI)
       - entity: sensor.nedorachio_irrigation_controller_flow_rate
         name: Flow rate (GPM)
+      - entity: sensor.nedorachio_irrigation_controller_total_gallons
+        name: Total gallons
       - type: divider
       - entity: switch.nedorachio_irrigation_controller_zone_1
-        name: Relay 1 (Zone 1)
+        name: Left
         secondary_info: last-changed
       - entity: switch.nedorachio_irrigation_controller_zone_2
-        name: Relay 2 (Zone 2)
+        name: Right
         secondary_info: last-changed
       - entity: switch.nedorachio_irrigation_controller_zone_3
-        name: Relay 3 (Zone 3)
+        name: Back
         secondary_info: last-changed
       - entity: switch.nedorachio_irrigation_controller_zone_4
-        name: Relay 4 (Zone 4)
+        name: Drip
         secondary_info: last-changed
       - type: divider
       - entity: switch.nedorachio_irrigation_controller_master_enable

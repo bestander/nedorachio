@@ -24,9 +24,10 @@ notifications.
 - Existing 24VAC sprinkler valve transformer (carried over from the Rachio).
 - Hunter Mini-Clik (or equivalent normally-closed) rain sensor.
 - EveryDropMeter Model 1004-EX flow meter (pulse output, reed switch).
-- 0–100 PSI 0–5V pressure transducer with 24VDC IRM-05-24 supply
-  (carried over from the existing ESP32-C3 device).
-- 20kΩ + 10kΩ voltage divider for transducer signal → ADC.
+- 0–100 PSI 0–5V pressure transducer (powered from shared 5V rail).
+- Perfboard front-end parts:
+  - Flow input network: 2kΩ, 10kΩ, 20kΩ, 100nF.
+  - Pressure ADC divider: 10kΩ, 20kΩ (optional 100nF filter cap).
 
 ### GPIO map
 
@@ -56,13 +57,55 @@ both the table below and the matching `pin:` lines in
 
 Pressure transducer linear calibration is set in
 `firmware/packages/03-sensors.yaml` under the `calibrate_linear:` filter.
-The two voltages refer to the **divider midpoint** (≈ V_transducer / 3 with
-the 20k+10k divider). Replace the placeholder points with two measured
-voltage→PSI pairs from a known-good gauge.
+The voltages refer to the **divider midpoint** (V_adc ≈ 0.667 × V_transducer
+with the 10k+20k divider used in this wiring).
 
 `pulses_per_gallon` (HA `number.nedorachio_pulses_per_gallon`) defaults to
 `10.0`. Calibrate during cutover by filling a 5-gallon bucket and dividing
 counted pulses by 5.
+
+### Perfboard wiring schematic (shared 5V/GND)
+
+```text
+PERFBOARD / SOLDER BOARD SCHEMATIC (using only 10k + 20k for both dividers)
+
+Create two soldered buses on your board:
+  NET +5V  -> shared by both sensors
+  NET GND  -> shared by both sensors + ESP32 GND
+
+======================================================================
+FLOW METER (2-wire style) -> ESP32 GPIO19
+======================================================================
+
+(+5V NET) ---- R1 2k ---- FLOW_NODE ----[ FLOW METER ]---- (GND NET)
+                           |
+                           +---- R2 10k ---- FLOW_GPIO_NODE ----> ESP32 GPIO19
+                                              |
+                                              +---- R3 20k ---- (GND NET)
+                                              |
+                                              +---- C1 100nF --- (GND NET)
+
+======================================================================
+PRESSURE SENSOR (3-wire analog) -> ESP32 GPIO34 (ADC)
+======================================================================
+
+Pressure VCC -------------------------------------------> (+5V NET)
+Pressure GND -------------------------------------------> (GND NET)
+
+Pressure OUT ---- R4 10k ---- PRESS_GPIO_NODE ---------> ESP32 GPIO34
+                                |
+                                +---- R5 20k ----------> (GND NET)
+                                |
+                                +---- C2 100nF --------> (GND NET)  [optional]
+
+======================================================================
+POWER / REFERENCE (MANDATORY)
+======================================================================
+
+PSU +5V -----------------------------------------------> (+5V NET)
+PSU GND -----------------------------------------------> (GND NET)
+ESP32 GND ---------------------------------------------> (GND NET)
+```
 
 ---
 

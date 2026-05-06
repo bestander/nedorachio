@@ -24,30 +24,66 @@ binary_sensor:
 
 sensor:
   # Flow meter: pulses + smoothed rate.
+  # Hardware path: 2-wire flow meter with a front-end network
+  # (+5V -> R1 2k -> FLOW_NODE, FLOW_NODE -> meter -> GND),
+  # then divider/filter into GPIO19 (R2 10k top, R3 20k bottom, C1 100nF).
   - platform: pulse_meter
-    name: "Flow rate"
+    name: "Flow Rate"
     id: flow_rate_gpm
     pin:
       number: GPIO19
       mode:
         input: true
-        pullup: true
-    unit_of_measurement: "gpm"
+      inverted: true
+    unit_of_measurement: "GPM"
     accuracy_decimals: 2
-    timeout: 30s
+    state_class: measurement
+    icon: "mdi:water-pump"
+    internal_filter: 2ms
+    timeout: 5s
+    on_raw_value:
+      then:
+        - lambda: |-
+            ESP_LOGI("flow_dbg", "raw pulses/min: %.3f", x);
+    on_value:
+      then:
+        - lambda: |-
+            ESP_LOGI("flow_dbg", "flow gpm (filtered): %.3f", x);
     filters:
-      # pulses/min × (1 gallon / pulses_per_gallon) = gpm
+      # Match known-good flow conversion from the previous controller setup.
+      # x from pulse_meter is pulses/min.
       - lambda: |-
-          float ppg = id(pulses_per_gallon).state;
-          if (ppg <= 0.0f) return 0.0f;
-          return x / ppg;
-    total:
+          return ((x / 60.0f) + 0.2f) * 0.322f;
+      - lambda: |-
+          if (x > 30.0f) return {};
+          return x;
+      - lambda: |-
+          if (x < 0.1f) return 0.0f;
+          return x;
+    total:  # Keep raw pulse total for existing per-zone gallons accounting.
       name: "Flow pulses total"
       id: flow_pulses_total
       unit_of_measurement: "pulses"
       accuracy_decimals: 0
+      internal: true
 
-  # Pressure: ADC1 → divider midpoint → PSI.
+  # HA-facing totalized water usage in gallons; derived from internal pulse count.
+  - platform: template
+    name: "Total Gallons"
+    id: total_gallons
+    unit_of_measurement: "gal"
+    accuracy_decimals: 1
+    device_class: water
+    state_class: total_increasing
+    icon: "mdi:water"
+    update_interval: 5s
+    lambda: |-
+      float ppg = id(pulses_per_gallon).state;
+      if (ppg <= 0.0f) return 0.0f;
+      return id(flow_pulses_total).state / ppg;
+
+  # Pressure: ADC1 input from pressure sensor through a 10k/20k divider.
+  # ADC node sees ~2/3 of transducer output.
   - platform: adc
     pin: GPIO34       # ADC1 (32-39); input-only on this WROOM board
     name: "Pressure"
@@ -60,9 +96,22 @@ sensor:
       - sliding_window_moving_average:
           window_size: 5
           send_every: 1
-      # Linear calibration: replace with the bench-measured points (Task 1.2).
-      # The voltage here is the *divider midpoint* voltage (≈ V_transducer / 3
-      # given the 20kΩ + 10kΩ divider carried over from the ESP32-C3 device).
+      # Calibration points below are for the divider midpoint (R4=10k, R5=20k).
+      # IMPORTANT: ESP32 ADC pin must stay <= 3.3V at all times.
       - calibrate_linear:
-          - 0.167 -> 0.0    # 0.5V at transducer = 0 PSI; placeholder
-          - 1.500 -> 100.0  # 4.5V at transducer = 100 PSI; placeholder
+          method: exact
+          datapoints:
+            - 0.000 -> 0.0
+            - 0.240 -> 10.0
+            - 0.460 -> 20.0
+            - 0.680 -> 30.0
+            - 0.900 -> 40.0
+            - 1.120 -> 50.0
+            - 1.360 -> 60.0
+            - 1.600 -> 70.0
+            - 1.840 -> 80.0
+            - 2.080 -> 90.0
+            - 2.320 -> 100.0
+      - clamp:
+          min_value: 0.0
+          max_value: 100.0
