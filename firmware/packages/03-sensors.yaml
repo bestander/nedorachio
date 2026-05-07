@@ -24,63 +24,35 @@ binary_sensor:
 
 sensor:
   # Flow meter: pulses + smoothed rate.
-  # Hardware path: 2-wire flow meter with a front-end network
-  # (+5V -> R1 2k -> FLOW_NODE, FLOW_NODE -> meter -> GND),
-  # then divider/filter into GPIO19 (R2 10k top, R3 20k bottom, C1 100nF).
+  # Hardware path: 12V 2-wire meter sensed through a 4N35 optocoupler.
+  # ESP32 side is open-collector: 4N35 pin5 -> GPIO19, pin4 -> GND,
+  # external 10k pull-up to 3.3V on GPIO19.
   - platform: pulse_meter
-    name: "Flow Rate"
-    id: flow_rate_gpm
+    name: "Irrigation Flow Pulses"
+    id: flow_pulses
     pin:
       number: GPIO19
       mode:
         input: true
-      inverted: true
-    unit_of_measurement: "GPM"
-    accuracy_decimals: 2
-    state_class: measurement
-    icon: "mdi:water-pump"
-    internal_filter: 2ms
-    timeout: 5s
-    on_raw_value:
-      then:
-        - lambda: |-
-            ESP_LOGI("flow_dbg", "raw pulses/min: %.3f", x);
-    on_value:
-      then:
-        - lambda: |-
-            ESP_LOGI("flow_dbg", "flow gpm (filtered): %.3f", x);
-    filters:
-      # Match known-good flow conversion from the previous controller setup.
-      # x from pulse_meter is pulses/min.
-      - lambda: |-
-          return ((x / 60.0f) + 0.2f) * 0.322f;
-      - lambda: |-
-          if (x > 30.0f) return {};
-          return x;
-      - lambda: |-
-          if (x < 0.1f) return 0.0f;
-          return x;
-    total:  # Keep raw pulse total for existing per-zone gallons accounting.
-      name: "Flow pulses total"
+      inverted: false
+    unit_of_measurement: "pulses/min"
+    total:
+      name: "Flow Pulses Total"
       id: flow_pulses_total
       unit_of_measurement: "pulses"
       accuracy_decimals: 0
-      internal: true
-
-  # HA-facing totalized water usage in gallons; derived from internal pulse count.
+    
   - platform: template
-    name: "Total Gallons"
-    id: total_gallons
-    unit_of_measurement: "gal"
-    accuracy_decimals: 1
-    device_class: water
-    state_class: total_increasing
+    name: "Flow Rate (GPM)"
+    id: flow_rate_gpm
+    unit_of_measurement: "GPM"
     icon: "mdi:water"
-    update_interval: 5s
     lambda: |-
+      float ppm = id(flow_pulses).state;  // pulses per minute
       float ppg = id(pulses_per_gallon).state;
       if (ppg <= 0.0f) return 0.0f;
-      return id(flow_pulses_total).state / ppg;
+      return ppm / ppg;
+    update_interval: 60s
 
   # Pressure: ADC1 input from pressure sensor through a 10k/20k divider.
   # ADC node sees ~2/3 of transducer output.

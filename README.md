@@ -23,10 +23,10 @@ notifications.
 - 8-channel ESP32-WROOM-32E relay/dev board (Amazon ASIN B0DK6QKNBM).
 - Existing 24VAC sprinkler valve transformer (carried over from the Rachio).
 - Hunter Mini-Clik (or equivalent normally-closed) rain sensor.
-- EveryDropMeter Model 1004-EX flow meter (pulse output, reed switch).
-- 0–100 PSI 0–5V pressure transducer (powered from shared 5V rail).
+- EveryDropMeter Model 1004-EX flow meter (2-wire pulse + power interface).
+- 0-100 PSI 0-5V pressure transducer (powered from shared 12V rail).
 - Perfboard front-end parts:
-  - Flow input network: 2kΩ, 10kΩ, 20kΩ, 100nF.
+  - Flow input network: 4N35, 4.7kΩ, 2.2kΩ, 10kΩ.
   - Pressure ADC divider: 10kΩ, 20kΩ (optional 100nF filter cap).
 
 ### GPIO map
@@ -46,8 +46,8 @@ both the table below and the matching `pin:` lines in
 | Relay 6 (zone 6)   | GPIO16           | unused |
 | Relay 7 (zone 7)   | GPIO4            | unused |
 | Relay 8 (zone 8)   | GPIO13           | unused |
-| Rain sensor input  | GPIO27           | internal pull-up |
-| Flow meter pulse   | GPIO26           | internal pull-up, interrupt-capable |
+| Rain sensor input  | GPIO18           | internal pull-up |
+| Flow meter pulse   | GPIO19           | external 10k pull-up to 3.3V |
 | Pressure ADC       | GPIO34           | ADC1, 11 dB attenuation |
 | Status/select LED  | GPIO14           | active-high (flip `inverted:` if wiring is active-low) |
 | Start/stop button  | GPIO21           | momentary, button-to-GND, internal pull-up |
@@ -64,47 +64,78 @@ with the 10k+20k divider used in this wiring).
 `10.0`. Calibrate during cutover by filling a 5-gallon bucket and dividing
 counted pulses by 5.
 
-### Perfboard wiring schematic (shared 5V/GND)
+### Perfboard wiring schematic (shared 12V PSU + 4N35 flow isolation)
 
 ```text
-PERFBOARD / SOLDER BOARD SCHEMATIC (using only 10k + 20k for both dividers)
+PERFBOARD / SOLDER BOARD SCHEMATIC (12V PSU domain + ESP32 domain)
 
-Create two soldered buses on your board:
-  NET +5V  -> shared by both sensors
-  NET GND  -> shared by both sensors + ESP32 GND
+Create buses:
+  NET +12V
+  NET GND12
+  NET +3V3
+  NET GND_ESP
 
 ======================================================================
-FLOW METER (2-wire style) -> ESP32 GPIO19
+FLOW METER (EveryDrop 1004-EX, 2-wire) -> 4N35 -> ESP32 GPIO19
 ======================================================================
 
-(+5V NET) ---- R1 2k ---- FLOW_NODE ----[ FLOW METER ]---- (GND NET)
-                           |
-                           +---- R2 10k ---- FLOW_GPIO_NODE ----> ESP32 GPIO19
-                                              |
-                                              +---- R3 20k ---- (GND NET)
-                                              |
-                                              +---- C1 100nF --- (GND NET)
+Define RED_NODE as this shared junction:
+  Meter RED (+signal), Rpullup lower end, and 4N35 Pin2 (cathode).
+
++12V NET -- Rpullup 4.7k ------------------------> RED_NODE
++12V NET -- Rled 2.2k ----> 4N35 Pin1 (Anode)
+RED_NODE ------------------> 4N35 Pin2 (Cathode)
+Meter RED -----------------> RED_NODE
+Meter BLACK (common) ----------------------------> GND12
+
+4N35 Pin5 (Collector) ---------------------------> ESP32 GPIO19
+GPIO19 -------------------- Rgpio 10k -----------> +3V3
+4N35 Pin4 (Emitter) -----------------------------> GND_ESP
+
+4N35-centered view (same wiring, pin-first):
+
+                4N35 (DIP-6, top view)
+
+            ┌─────────────────────────┐
+ +12V--Rled----> Pin 1  Anode   Col 5 ├──────────> GPIO19 (ESP32 input)
+ RED_NODE ------ Pin 2  Cathode        │
+            (Pin 3 NC)                 │
+ GND_ESP ------- Pin 4  Emitter  Base 6│ (NC)
+            └─────────────────────────┘
+                              |
+                              +-- GPIO19 has 10k pull-up to 3.3V
+
+RED_NODE wiring (explicit):
+  +12V -- Rpullup 4.7k --+
+                         +-- Meter RED
+                         +-- 4N35 Pin2 (Cathode)
 
 ======================================================================
 PRESSURE SENSOR (3-wire analog) -> ESP32 GPIO34 (ADC)
 ======================================================================
 
-Pressure VCC -------------------------------------------> (+5V NET)
-Pressure GND -------------------------------------------> (GND NET)
+Pressure VCC ---------------------------------------> +12V NET
+Pressure GND ---------------------------------------> GND12
 
-Pressure OUT ---- R4 10k ---- PRESS_GPIO_NODE ---------> ESP32 GPIO34
+Pressure OUT ---- R4 10k ---- PRESS_GPIO_NODE ------> ESP32 GPIO34
                                 |
-                                +---- R5 20k ----------> (GND NET)
+                                +---- R5 20k -------> GND_ESP
                                 |
-                                +---- C2 100nF --------> (GND NET)  [optional]
+                                +---- C2 100nF ------> GND_ESP  [optional]
 
 ======================================================================
 POWER / REFERENCE (MANDATORY)
 ======================================================================
 
-PSU +5V -----------------------------------------------> (+5V NET)
-PSU GND -----------------------------------------------> (GND NET)
-ESP32 GND ---------------------------------------------> (GND NET)
+12V PSU + ------------------------------------------> +12V NET
+12V PSU - ------------------------------------------> GND12
+
+ESP32 3V3 ------------------------------------------> +3V3
+ESP32 GND ------------------------------------------> GND_ESP
+
+# Because pressure OUT is wired directly to ESP32 ADC,
+# tie GND12 and GND_ESP together at one point (star ground).
+GND12 ----------------------------------------------> GND_ESP
 ```
 
 ---

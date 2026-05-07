@@ -249,16 +249,18 @@ script:
                 id(pre_flight_reason) = "time_not_synced";
       # 4. rain sensor dry + hold
       - lambda: |-
-          if (id(rain_sensor).state) {
-            id(pre_flight_passed) = false;
-            id(pre_flight_reason) = "rain_sensor_wet";
-          } else {
-            uint32_t now_epoch = (uint32_t)id(effective_now_epoch).state;
-            uint32_t hold_s = (uint32_t)(id(rain_hold_hours_after_sensor).state * 3600.0f);
-            if (id(rain_sensor_last_wet_epoch) > 0 &&
-                now_epoch - id(rain_sensor_last_wet_epoch) < hold_s) {
+          if (id(gate_rain_sensor).state) {
+            if (id(rain_sensor).state) {
               id(pre_flight_passed) = false;
-              id(pre_flight_reason) = "rain_hold_after_sensor";
+              id(pre_flight_reason) = "rain_sensor_wet";
+            } else {
+              uint32_t now_epoch = (uint32_t)id(effective_now_epoch).state;
+              uint32_t hold_s = (uint32_t)(id(rain_hold_hours_after_sensor).state * 3600.0f);
+              if (id(rain_sensor_last_wet_epoch) > 0 &&
+                  now_epoch - id(rain_sensor_last_wet_epoch) < hold_s) {
+                id(pre_flight_passed) = false;
+                id(pre_flight_reason) = "rain_hold_after_sensor";
+              }
             }
           }
       # 5. rain forecast (with TTL → fail-open if stale)
@@ -285,7 +287,7 @@ script:
       # 6. static-pressure gate (only meaningful when no zone is on)
       - if:
           condition:
-            lambda: 'return id(currently_on_zone) == 0;'
+            lambda: 'return id(currently_on_zone) == 0 && id(gate_static_pressure_preflight).state;'
           then:
             - delay: 1s   # let any noise settle
             - lambda: |-
@@ -695,7 +697,9 @@ interval:
           // Phantom flow: armed whenever no zone is on (including soaking).
           static uint32_t phantom_first_seen_ms = 0;
           float gpm = id(flow_rate_gpm).state;
-          if (id(currently_on_zone) == 0 && gpm > id(phantom_flow_gpm).state) {
+          if (id(gate_alarm_phantom_flow).state &&
+              id(currently_on_zone) == 0 &&
+              gpm > id(phantom_flow_gpm).state) {
             if (phantom_first_seen_ms == 0) phantom_first_seen_ms = millis();
             if (millis() - phantom_first_seen_ms > 5UL * 60UL * 1000UL) {
               id(alarm_phantom_flow).publish_state(true);
@@ -715,7 +719,8 @@ interval:
           uint32_t since_zone_start_ms = now_ms - id(zone_started_at_ms);
 
           // No-flow (after grace period).
-          if (since_zone_start_ms >= (uint32_t)(id(no_flow_grace_s).state * 1000)) {
+          if (id(gate_alarm_no_flow).state &&
+              since_zone_start_ms >= (uint32_t)(id(no_flow_grace_s).state * 1000)) {
             float min_gpm = 1.0f;
             switch (id(currently_on_zone)) {
               case 1: min_gpm = id(zone_1_min_flow_gpm).state; break;
@@ -747,7 +752,7 @@ interval:
             case 7: max_gpm = id(zone_7_max_flow_gpm).state; break;
             case 8: max_gpm = id(zone_8_max_flow_gpm).state; break;
           }
-          if (gpm > max_gpm) {
+          if (id(gate_alarm_high_flow).state && gpm > max_gpm) {
             if (high_flow_first_ms == 0) high_flow_first_ms = now_ms;
             if (now_ms - high_flow_first_ms >= (uint32_t)(id(high_flow_grace_s).state * 1000)) {
               id(alarm_high_flow).publish_state(true);
@@ -762,7 +767,7 @@ interval:
 
           // Low pressure (after 30s, sustained 5s).
           float p = id(pressure_psi).state;
-          if (since_zone_start_ms >= 30 * 1000) {
+          if (id(gate_alarm_low_pressure).state && since_zone_start_ms >= 30 * 1000) {
             if (p < id(pressure_running_min_psi).state) {
               if (low_psi_first_ms == 0) low_psi_first_ms = now_ms;
               if (now_ms - low_psi_first_ms >= 5 * 1000) {
@@ -778,7 +783,7 @@ interval:
           }
 
           // High pressure (sustained 10s); cancel only iff `high_pressure_cancels_run`.
-          if (p > id(pressure_high_psi).state) {
+          if (id(gate_alarm_high_pressure).state && p > id(pressure_high_psi).state) {
             if (high_psi_first_ms == 0) high_psi_first_ms = now_ms;
             if (now_ms - high_psi_first_ms >= 10 * 1000) {
               id(alarm_high_pressure).publish_state(true);
@@ -794,7 +799,7 @@ interval:
           }
 
           // Rain sensor wet → cancel (no retry; cause noted for retry policy).
-          if (id(rain_sensor).state) {
+          if (id(gate_rain_sensor).state && id(rain_sensor).state) {
             id(rain_sensor_last_wet_epoch) = (uint32_t)id(effective_now_epoch).state;
             id(run_cancel_requested) = true;
             id(run_cancel_cause) = "rain";

@@ -210,6 +210,14 @@ text_sensor:
     update_interval: 5s
     lambda: 'return id(last_run_outcome_str);'
 
+  - platform: template
+    name: "Last pre-flight failure reason"
+    id: last_preflight_failure_reason
+    update_interval: 2s
+    lambda: |-
+      if (id(pre_flight_reason).empty()) return std::string("none");
+      return id(pre_flight_reason);
+
 sensor:
   - platform: template
     name: "Currently running zone"

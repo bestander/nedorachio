@@ -844,6 +844,50 @@ switch:
     optimistic: true
     restore_mode: RESTORE_DEFAULT_ON
 
+  # --- Sensor gate toggles ---
+  # These let you disable specific sensor-driven protections while commissioning.
+  - platform: template
+    name: "Gate: rain sensor"
+    id: gate_rain_sensor
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+
+  - platform: template
+    name: "Gate: static pressure preflight"
+    id: gate_static_pressure_preflight
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+
+  - platform: template
+    name: "Alarm gate: phantom flow"
+    id: gate_alarm_phantom_flow
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+
+  - platform: template
+    name: "Alarm gate: no flow"
+    id: gate_alarm_no_flow
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_OFF
+
+  - platform: template
+    name: "Alarm gate: high flow"
+    id: gate_alarm_high_flow
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+
+  - platform: template
+    name: "Alarm gate: low pressure"
+    id: gate_alarm_low_pressure
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+
+  - platform: template
+    name: "Alarm gate: high pressure"
+    id: gate_alarm_high_pressure
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+
   - platform: template
     name: "High pressure cancels run"
     id: high_pressure_cancels_run

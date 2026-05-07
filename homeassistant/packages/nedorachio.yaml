@@ -53,6 +53,7 @@ automation:
           alarm_name: "{{ trigger.to_state.attributes.friendly_name }}"
           zone: "{{ states('sensor.nedorachio_irrigation_controller_currently_running_zone') }}"
           phase: "{{ states('sensor.nedorachio_irrigation_controller_current_phase') }}"
+          preflight_reason: "{{ states('sensor.nedorachio_irrigation_controller_last_pre_flight_failure_reason') }}"
           psi: "{{ states('sensor.nedorachio_irrigation_controller_pressure') }}"
           gpm: "{{ states('sensor.nedorachio_irrigation_controller_flow_rate') }}"
       # Replace `notify.notify` with your actual notify target,
@@ -62,6 +63,7 @@ automation:
           title: "Nedorachio: {{ alarm_name }}"
           message: >-
             Phase {{ phase }}, zone {{ zone }}.
+            Pre-flight reason {{ preflight_reason }}.
             PSI {{ psi }}, flow {{ gpm }} gpm.
 
 template:
