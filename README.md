@@ -26,7 +26,7 @@ notifications.
 - EveryDropMeter Model 1004-EX flow meter (2-wire pulse + power interface).
 - 0-100 PSI 0-5V pressure transducer (powered from shared 12V rail).
 - Perfboard front-end parts:
-  - Flow input network: 4N35, 4.7kΩ, 2.2kΩ, 10kΩ.
+  - Flow input network: 4N35, 2.2kΩ (Rpullup), 2.2kΩ (Rled), 10kΩ.
   - Pressure ADC divider: 10kΩ, 20kΩ (optional 100nF filter cap).
 
 ### GPIO map
@@ -82,7 +82,7 @@ FLOW METER (EveryDrop 1004-EX, 2-wire) -> 4N35 -> ESP32 GPIO19
 Define RED_NODE as this shared junction:
   Meter RED (+signal), Rpullup lower end, and 4N35 Pin2 (cathode).
 
-+12V NET -- Rpullup 4.7k ------------------------> RED_NODE
++12V NET -- Rpullup 2.2k ------------------------> RED_NODE
 +12V NET -- Rled 2.2k ----> 4N35 Pin1 (Anode)
 RED_NODE ------------------> 4N35 Pin2 (Cathode)
 Meter RED -----------------> RED_NODE
@@ -106,7 +106,7 @@ GPIO19 -------------------- Rgpio 10k -----------> +3V3
                               +-- GPIO19 has 10k pull-up to 3.3V
 
 RED_NODE wiring (explicit):
-  +12V -- Rpullup 4.7k --+
+  +12V -- Rpullup 2.2k --+
                          +-- Meter RED
                          +-- 4N35 Pin2 (Cathode)
 

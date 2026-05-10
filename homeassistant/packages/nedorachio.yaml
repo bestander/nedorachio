@@ -71,6 +71,102 @@ template:
       - platform: time_pattern
         minutes: "/1"
     sensor:
+      - name: "Nedorachio last stop reason"
+        state: >-
+          {% set outcome = states('sensor.nedorachio_irrigation_controller_last_run_outcome') %}
+          {% if outcome.startswith('cancelled_') %}
+            {{ outcome | replace('cancelled_', '') }}
+          {% else %}
+            none
+          {% endif %}
+      - name: "Nedorachio last stop flow/pressure fault"
+        state: >-
+          {% set reason = states('sensor.nedorachio_last_stop_reason') %}
+          {% if reason in ['no_flow', 'high_flow', 'low_pressure', 'high_pressure'] %}
+            yes
+          {% else %}
+            no
+          {% endif %}
+      - name: "Nedorachio zone 1 next run"
+        device_class: timestamp
+        state: >-
+          {% set last = states('sensor.nedorachio_irrigation_controller_zone_1_last_finished_epoch') | int(0) %}
+          {% set interval_h = states('number.nedorachio_irrigation_controller_zone_1_min_interval_hours') | float(0) %}
+          {% if last <= 0 or interval_h <= 0 %}
+            {{ none }}
+          {% else %}
+            {{ (last + (interval_h * 3600) | int(0)) | timestamp_local }}
+          {% endif %}
+      - name: "Nedorachio zone 2 next run"
+        device_class: timestamp
+        state: >-
+          {% set last = states('sensor.nedorachio_irrigation_controller_zone_2_last_finished_epoch') | int(0) %}
+          {% set interval_h = states('number.nedorachio_irrigation_controller_zone_2_min_interval_hours') | float(0) %}
+          {% if last <= 0 or interval_h <= 0 %}
+            {{ none }}
+          {% else %}
+            {{ (last + (interval_h * 3600) | int(0)) | timestamp_local }}
+          {% endif %}
+      - name: "Nedorachio zone 3 next run"
+        device_class: timestamp
+        state: >-
+          {% set last = states('sensor.nedorachio_irrigation_controller_zone_3_last_finished_epoch') | int(0) %}
+          {% set interval_h = states('number.nedorachio_irrigation_controller_zone_3_min_interval_hours') | float(0) %}
+          {% if last <= 0 or interval_h <= 0 %}
+            {{ none }}
+          {% else %}
+            {{ (last + (interval_h * 3600) | int(0)) | timestamp_local }}
+          {% endif %}
+      - name: "Nedorachio zone 4 next run"
+        device_class: timestamp
+        state: >-
+          {% set last = states('sensor.nedorachio_irrigation_controller_zone_4_last_finished_epoch') | int(0) %}
+          {% set interval_h = states('number.nedorachio_irrigation_controller_zone_4_min_interval_hours') | float(0) %}
+          {% if last <= 0 or interval_h <= 0 %}
+            {{ none }}
+          {% else %}
+            {{ (last + (interval_h * 3600) | int(0)) | timestamp_local }}
+          {% endif %}
+      - name: "Nedorachio zone 5 next run"
+        device_class: timestamp
+        state: >-
+          {% set last = states('sensor.nedorachio_irrigation_controller_zone_5_last_finished_epoch') | int(0) %}
+          {% set interval_h = states('number.nedorachio_irrigation_controller_zone_5_min_interval_hours') | float(0) %}
+          {% if last <= 0 or interval_h <= 0 %}
+            {{ none }}
+          {% else %}
+            {{ (last + (interval_h * 3600) | int(0)) | timestamp_local }}
+          {% endif %}
+      - name: "Nedorachio zone 6 next run"
+        device_class: timestamp
+        state: >-
+          {% set last = states('sensor.nedorachio_irrigation_controller_zone_6_last_finished_epoch') | int(0) %}
+          {% set interval_h = states('number.nedorachio_irrigation_controller_zone_6_min_interval_hours') | float(0) %}
+          {% if last <= 0 or interval_h <= 0 %}
+            {{ none }}
+          {% else %}
+            {{ (last + (interval_h * 3600) | int(0)) | timestamp_local }}
+          {% endif %}
+      - name: "Nedorachio zone 7 next run"
+        device_class: timestamp
+        state: >-
+          {% set last = states('sensor.nedorachio_irrigation_controller_zone_7_last_finished_epoch') | int(0) %}
+          {% set interval_h = states('number.nedorachio_irrigation_controller_zone_7_min_interval_hours') | float(0) %}
+          {% if last <= 0 or interval_h <= 0 %}
+            {{ none }}
+          {% else %}
+            {{ (last + (interval_h * 3600) | int(0)) | timestamp_local }}
+          {% endif %}
+      - name: "Nedorachio zone 8 next run"
+        device_class: timestamp
+        state: >-
+          {% set last = states('sensor.nedorachio_irrigation_controller_zone_8_last_finished_epoch') | int(0) %}
+          {% set interval_h = states('number.nedorachio_irrigation_controller_zone_8_min_interval_hours') | float(0) %}
+          {% if last <= 0 or interval_h <= 0 %}
+            {{ none }}
+          {% else %}
+            {{ (last + (interval_h * 3600) | int(0)) | timestamp_local }}
+          {% endif %}
       - name: "Nedorachio zone 1 last triggered ago"
         state: >-
           {% set ts = states('sensor.nedorachio_irrigation_controller_zone_1_last_finished_epoch') | int(0) %}
