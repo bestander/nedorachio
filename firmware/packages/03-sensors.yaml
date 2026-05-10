@@ -34,8 +34,10 @@ sensor:
       number: GPIO19
       mode:
         input: true
-      inverted: false
+      inverted: true
     unit_of_measurement: "pulses/min"
+    timeout: 2s
+    internal_filter: 500us
     total:
       name: "Flow Pulses Total"
       id: flow_pulses_total
@@ -52,7 +54,7 @@ sensor:
       float ppg = id(pulses_per_gallon).state;
       if (ppg <= 0.0f) return 0.0f;
       return ppm / ppg;
-    update_interval: 60s
+    update_interval: 5s
 
   # Pressure: ADC1 input from pressure sensor through a 10k/20k divider.
   # ADC node sees ~2/3 of transducer output.
