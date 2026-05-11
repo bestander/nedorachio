@@ -983,10 +983,34 @@ interval:
             high_psi_first_ms = 0;
           }
 
-          // Rain sensor wet → cancel (no retry; cause noted for retry policy).
+          // Rain sensor wet → cancel.
           if (id(gate_rain_sensor).state && id(rain_sensor).state) {
             id(rain_sensor_last_wet_epoch) = (uint32_t)id(effective_now_epoch).state;
             id(run_cancel_requested) = true;
             id(run_cancel_cause) = "rain";
+          }
+
+          // Rain accumulation/forecast gate crossed mid-run -> cancel now.
+          uint32_t now_epoch = (uint32_t)id(effective_now_epoch).state;
+          uint32_t ttl_s = (uint32_t)(id(rain_mm_max_age_hours).state * 3600.0f);
+          float effective_mm = id(rain_mm_last_48h).state;
+          uint32_t pushed = (uint32_t)id(rain_mm_last_pushed_epoch).state;
+          if (pushed == 0 || now_epoch - pushed > ttl_s) {
+            effective_mm = 0.0f;   // stale -> fail-open
+          }
+          bool rain_block = false;
+          if (effective_mm > id(rain_mm_threshold_48h).state) {
+            rain_block = true;
+            id(rain_forecast_last_high_epoch) = now_epoch;
+          } else {
+            uint32_t hold_s = (uint32_t)(id(rain_hold_hours_after_forecast).state * 3600.0f);
+            if (id(rain_forecast_last_high_epoch) > 0 &&
+                now_epoch - id(rain_forecast_last_high_epoch) < hold_s) {
+              rain_block = true;
+            }
+          }
+          if (rain_block) {
+            id(run_cancel_requested) = true;
+            id(run_cancel_cause) = "rain_forecast";
           }
 

@@ -10,6 +10,8 @@ template:
                 start: "23:00"
                 end: "09:00"
                 timezone: "America/New_York"
+              rain_accumulation_threshold_mm_48h: 5
+              rain_accumulation_hold_hours_after_threshold: 24
               attempt_cooldown_minutes: 20
               maximum_runtime_minutes: 60
               blackout:

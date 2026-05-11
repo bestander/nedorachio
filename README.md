@@ -4,7 +4,7 @@ Home-Assistant-controlled irrigation controller built on an 8-relay
 ESP32-WROOM-32E development board running ESPHome. Replaces a Rachio.
 
 All irrigation logic — per-zone cadence scheduler, cycle-and-soak, pre-flight
-gates, mid-run cancels, retries, rain hold, stats — lives on the device. Home
+gates, mid-run cancels, cooldown-paced re-attempts, rain hold, stats — lives on the device. Home
 Assistant is a thin layer that pushes weather data, surfaces state, and routes
 notifications.
 
@@ -17,6 +17,8 @@ notifications.
 ---
 
 ## Hardware
+
+Enclosure CAD model: [Onshape enclosure model](https://cad.onshape.com/documents/9c8fb8a497eae65202519f86/w/afbdc8fc01fccc1892897bd4/e/039000a7d5b9f349569a7599?renderMode=0&uiState=6a022ed0ac288eec0668bda4)
 
 ### Bill of materials
 
@@ -210,7 +212,7 @@ firmware/
     02-zones.yaml            # 8 relays + zone switches + safety
     03-sensors.yaml          # rain, flow, pressure
     04-tunables.yaml         # all number/switch entities
-    05-engine.yaml           # pre-flight, cycle-and-soak, cancels, retry, sequencing
+    05-engine.yaml           # pre-flight, cycle-and-soak, cancels, sequencing
     06-schedule.yaml         # cadence evaluator, per-zone last-finished, skip, plan readouts
     07-stats.yaml            # per-zone gallons, runs, durations + rollover
 ```
@@ -230,6 +232,9 @@ firmware/
 3. Reload template entities and automations. On HA start (and every 30 minutes),
    `script.nedorachio_apply_config_profile` re-applies the config profile to the
    controller entities.
+   Rain-accumulation gate settings are also pushed from profile globals:
+   `rain_accumulation_threshold_mm_48h` and
+   `rain_accumulation_hold_hours_after_threshold`.
 4. Within 10 minutes, `number.nedorachio_rain_mm_last_48h` should be populated.
 5. Edit the `notify.notify` line in `nedorachio_alarm_notify` to use your
    actual notification target (e.g. `notify.mobile_app_yourphone`).
@@ -239,6 +244,43 @@ firmware/
    `views:`. Note that exact entity slugs depend on how HA names entities at
    discovery — confirm each card resolves before saving.
 
+### OpenWeatherMap rain wiring
+
+If you're using OpenWeatherMap, define `sensor.rain_observed_48h` in HA and
+point step (2) above to it.
+
+Example template sensor (put in a HA template package, then reload templates):
+
+```yaml
+template:
+  - sensor:
+      - name: "Rain observed 48h"
+        unique_id: rain_observed_48h
+        unit_of_measurement: "mm"
+        state: >-
+          {# OpenWeatherMap weather entity with `forecast` attribute #}
+          {% set wx = state_attr('weather.home', 'forecast') %}
+          {% if wx is not sequence %}
+            0
+          {% else %}
+            {% set ns = namespace(total=0.0) %}
+            {% set now_ts = as_timestamp(now()) %}
+            {% for f in wx %}
+              {% set f_ts = as_timestamp(f.datetime, default=0) %}
+              {% if f_ts > 0 and f_ts <= now_ts + 48*3600 %}
+                {% set p = (f.precipitation | default(0)) | float(0) %}
+                {% set ns.total = ns.total + p %}
+              {% endif %}
+            {% endfor %}
+            {{ ns.total | round(1) }}
+          {% endif %}
+```
+
+Then in `homeassistant/packages/nedorachio.yaml`, set:
+
+- `weather.your_local_forecast` -> your OpenWeatherMap weather entity
+- `sensor.rain_observed_48h` -> the template sensor above
+
 ---
 
 ## Operation
@@ -247,9 +289,9 @@ firmware/
 
 Per-zone cadence, not a weekly calendar. Each zone can run in one of two modes:
 
-- **time target**: `zone_N_total_min` / `_cycle_min` / `_soak_min`
+- **time target**: `zone_N_total_minutes` / `_cycle_minutes` / `_soak_minutes`
 - **gallons target**: `zone_N_goal_gallons_per_cycle` / `_cycle_gallons` /
-  `_soak_min` with carry-forward progress across attempts
+  `_soak_minutes` with carry-forward progress across attempts
 
 A global watering window (`schedule_start_hour:minute` →
 `schedule_end_hour:minute`, default `00:00 → 08:00`) gates *when* a zone may
@@ -270,7 +312,7 @@ Automatic retries are not count-limited; instead, the evaluator waits global
   static pressure, alarm-latch). If it fails, the cycle is aborted and the
   reason is logged.
 - The runner executes either:
-  - time target: cycle-and-soak until `total_min` accrues
+  - time target: cycle-and-soak until `total_minutes` accrues
   - gallons target: run until `cycle_gallons`, soak, repeat until
     `goal_gallons_per_cycle` is reached
 - When the zone finishes (or is cancelled, or hits the runtime cap),
@@ -279,6 +321,8 @@ Automatic retries are not count-limited; instead, the evaluator waits global
 - The next evaluator tick picks the next eligible zone, if any. If the window
   closes mid-run, the in-progress zone finishes; no new zone starts until the
   window reopens.
+- If rain accumulation crosses threshold while a zone is running, the current
+  run is cancelled immediately with cause `rain_forecast`.
 - Per-zone stats accumulate to `zone_N_gallons_total`, `zone_N_run_count`,
   etc.; daily/monthly aggregates roll over at midnight.
 
@@ -338,7 +382,7 @@ advanced/internal service call).
 | Alarm                            | Cause                                              | Action                  |
 |----------------------------------|----------------------------------------------------|-------------------------|
 | `alarm_pre_flight_failed`        | A pre-flight gate refused to start                 | Read `pre_flight_reason`; fix; clear fault. |
-| `alarm_runtime_exceeded`         | A zone ran longer than `maximum_runtime_minutes`    | Inspect for stuck relay; clear fault. |
+| `alarm_runtime_exceeded`         | A zone ran longer than `maximum_runtime_minutes`   | Inspect for stuck relay; clear fault. |
 | `alarm_no_flow`                  | gpm < `zone_N_minimum_flow_gpm` after `no_flow_grace_s` | Check pump/well/valve; retry or clear. |
 | `alarm_high_flow`                | gpm > `zone_N_maximum_flow_gpm` for `high_flow_grace_s` | Check for broken pipe; clear fault. |
 | `alarm_phantom_flow`             | gpm > `phantom_flow_gpm` while no zone on for 5+ min | Check valves; clear fault. |

@@ -91,19 +91,19 @@ cards:
   - type: entities
     title: Next watering
     entities:
-      - entity: sensor.nedorachio_zone_1_next_run
-        name: Zone 1 next run
-      - entity: sensor.nedorachio_zone_2_next_run
-        name: Zone 2 next run
-      - entity: sensor.nedorachio_zone_3_next_run
-        name: Zone 3 next run
-      - entity: sensor.nedorachio_zone_4_next_run
-        name: Zone 4 next run
-      - entity: sensor.nedorachio_zone_5_next_run
-        name: Zone 5 next run
-      - entity: sensor.nedorachio_zone_6_next_run
-        name: Zone 6 next run
-      - entity: sensor.nedorachio_zone_7_next_run
-        name: Zone 7 next run
-      - entity: sensor.nedorachio_zone_8_next_run
-        name: Zone 8 next run
+      - entity: sensor.nedorachio_zone_1_next_run_local
+        name: Zone 1 next run (local)
+      - entity: sensor.nedorachio_zone_2_next_run_local
+        name: Zone 2 next run (local)
+      - entity: sensor.nedorachio_zone_3_next_run_local
+        name: Zone 3 next run (local)
+      - entity: sensor.nedorachio_zone_4_next_run_local
+        name: Zone 4 next run (local)
+      - entity: sensor.nedorachio_zone_5_next_run_local
+        name: Zone 5 next run (local)
+      - entity: sensor.nedorachio_zone_6_next_run_local
+        name: Zone 6 next run (local)
+      - entity: sensor.nedorachio_zone_7_next_run_local
+        name: Zone 7 next run (local)
+      - entity: sensor.nedorachio_zone_8_next_run_local
+        name: Zone 8 next run (local)
