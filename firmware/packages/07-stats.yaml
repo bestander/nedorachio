@@ -578,6 +578,18 @@ sensor:
 
   # --- Aggregates ---
   - platform: template
+    name: "Total gallons"
+    id: total_gallons_sensor
+    update_interval: 5s
+    accuracy_decimals: 1
+    unit_of_measurement: "gal"
+    lambda: |-
+      float ppg = id(pulses_per_gallon).state;
+      if (!(ppg > 0.0f)) return 0.0f;
+      float pulses_total = id(flow_pulses_total).state;
+      if (!(pulses_total >= 0.0f)) return 0.0f;
+      return pulses_total / ppg;
+  - platform: template
     name: "Gallons today"
     id: gallons_today_sensor
     update_interval: 60s

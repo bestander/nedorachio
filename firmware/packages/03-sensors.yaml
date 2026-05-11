@@ -45,15 +45,41 @@ sensor:
       accuracy_decimals: 0
     
   - platform: template
-    name: "Flow Rate (GPM)"
+    name: "Flow Rate GPM"
     id: flow_rate_gpm
     unit_of_measurement: "GPM"
     icon: "mdi:water"
     lambda: |-
-      float ppm = id(flow_pulses).state;  // pulses per minute
+      // Derive GPM from total-gallons delta over real elapsed time so both
+      // flow rate and total volume use the same calibration basis (PPG).
+      static float last_gallons = 0.0f;
+      static uint32_t last_ms = 0;
+      static float ema_gpm = 0.0f;
+      uint32_t now_ms = millis();
       float ppg = id(pulses_per_gallon).state;
-      if (ppg <= 0.0f) return 0.0f;
-      return ppm / ppg;
+      if (!(ppg > 0.0f)) return 0.0f;
+      float pulses_total = id(flow_pulses_total).state;
+      if (!(pulses_total >= 0.0f)) pulses_total = 0.0f;
+      float gallons_now = pulses_total / ppg;
+      if (!(gallons_now >= 0.0f)) gallons_now = 0.0f;
+      if (!(ema_gpm >= 0.0f)) ema_gpm = 0.0f;
+      if (last_ms == 0) {
+        last_ms = now_ms;
+        last_gallons = gallons_now;
+        return 0.0f;
+      }
+      uint32_t dt_ms = now_ms - last_ms;
+      if (dt_ms < 5000) {
+        // Keep prior value until a full measurement window has elapsed.
+        return ema_gpm;
+      }
+      float dg = gallons_now - last_gallons;
+      if (dg < 0.0f) dg = 0.0f;  // guard against counter reset/restart edge cases
+      float inst_gpm = dg * 60000.0f / (float)dt_ms;
+      ema_gpm = (ema_gpm == 0.0f) ? inst_gpm : (0.7f * ema_gpm + 0.3f * inst_gpm);
+      last_gallons = gallons_now;
+      last_ms = now_ms;
+      return ema_gpm;
     update_interval: 5s
 
   # Pressure: ADC1 input from pressure sensor through a 10k/20k divider.

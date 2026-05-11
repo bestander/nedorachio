@@ -55,7 +55,7 @@ automation:
           phase: "{{ states('sensor.nedorachio_irrigation_controller_current_phase') }}"
           preflight_reason: "{{ states('sensor.nedorachio_irrigation_controller_last_pre_flight_failure_reason') }}"
           psi: "{{ states('sensor.nedorachio_irrigation_controller_pressure') }}"
-          gpm: "{{ states('sensor.nedorachio_irrigation_controller_flow_rate') }}"
+          gpm: "{{ states('sensor.nedorachio_irrigation_controller_flow_rate_gpm') }}"
       # Replace `notify.notify` with your actual notify target,
       # e.g. `notify.mobile_app_yourphone`.
       - service: notify.notify

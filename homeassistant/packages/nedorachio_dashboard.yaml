@@ -12,7 +12,7 @@ cards:
     entities:
       - entity: sensor.nedorachio_irrigation_controller_pressure
         name: Pressure (PSI)
-      - entity: sensor.nedorachio_irrigation_controller_flow_rate
+      - entity: sensor.nedorachio_irrigation_controller_flow_rate_gpm
         name: Flow rate (GPM)
       - entity: sensor.nedorachio_irrigation_controller_flow_pulses_total
         name: Flow pulses total
