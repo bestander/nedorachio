@@ -380,10 +380,20 @@ script:
           condition:
             lambda: 'return !id(pre_flight_passed);'
           then:
-            - binary_sensor.template.publish: { id: alarm_pre_flight_failed, state: true }
             - lambda: |-
-                id(any_alarm_latched) = true;
-                ESP_LOGW("preflight", "FAIL: %s", id(pre_flight_reason).c_str());
+                // Rain/weather blocks are expected schedule skips, not faults.
+                bool benign_skip =
+                    id(pre_flight_reason) == "rain_sensor_wet" ||
+                    id(pre_flight_reason) == "rain_hold_after_sensor" ||
+                    id(pre_flight_reason) == "rain_forecast_high" ||
+                    id(pre_flight_reason) == "rain_forecast_hold";
+                if (benign_skip) {
+                  ESP_LOGI("preflight", "SKIP: %s", id(pre_flight_reason).c_str());
+                } else {
+                  id(alarm_pre_flight_failed).publish_state(true);
+                  id(any_alarm_latched) = true;
+                  ESP_LOGW("preflight", "FAIL: %s", id(pre_flight_reason).c_str());
+                }
           else:
             - lambda: |-
                 ESP_LOGI("preflight", "PASS");
@@ -1011,6 +1021,6 @@ interval:
           }
           if (rain_block) {
             id(run_cancel_requested) = true;
-            id(run_cancel_cause) = "rain_forecast";
+            id(run_cancel_cause) = "rain_reschedule";
           }
 

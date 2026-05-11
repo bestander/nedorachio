@@ -225,10 +225,9 @@ firmware/
    `homeassistant/packages/nedorachio_config.yaml` into your HA config under
    `packages/`. Make sure `configuration.yaml` has
    `homeassistant: packages: !include_dir_named packages`.
-2. Replace `weather.your_local_forecast` with your weather entity and
-   `sensor.rain_observed_48h` with whatever observed-rain sensor you have.
-   If you don't have one, the feeder writes `0` and the device falls back to
-   the rain sensor and static-pressure gate.
+2. Replace `weather.your_local_forecast` with your weather entity.
+   Keep the rain entity name as `sensor.rain_observed_48h` (recommended),
+   so you do not need to edit package templates.
 3. Reload template entities and automations. On HA start (and every 30 minutes),
    `script.nedorachio_apply_config_profile` re-applies the config profile to the
    controller entities.
@@ -246,40 +245,23 @@ firmware/
 
 ### OpenWeatherMap rain wiring
 
-If you're using OpenWeatherMap, define `sensor.rain_observed_48h` in HA and
-point step (2) above to it.
+Create `sensor.rain_observed_48h` in HA as a Statistics helper.
 
-Example template sensor (put in a HA template package, then reload templates):
+Recommended setup (UI):
 
-```yaml
-template:
-  - sensor:
-      - name: "Rain observed 48h"
-        unique_id: rain_observed_48h
-        unit_of_measurement: "mm"
-        state: >-
-          {# OpenWeatherMap weather entity with `forecast` attribute #}
-          {% set wx = state_attr('weather.home', 'forecast') %}
-          {% if wx is not sequence %}
-            0
-          {% else %}
-            {% set ns = namespace(total=0.0) %}
-            {% set now_ts = as_timestamp(now()) %}
-            {% for f in wx %}
-              {% set f_ts = as_timestamp(f.datetime, default=0) %}
-              {% if f_ts > 0 and f_ts <= now_ts + 48*3600 %}
-                {% set p = (f.precipitation | default(0)) | float(0) %}
-                {% set ns.total = ns.total + p %}
-              {% endif %}
-            {% endfor %}
-            {{ ns.total | round(1) }}
-          {% endif %}
-```
+1. Settings -> Devices & Services -> Helpers -> Create Helper
+2. Choose **Statistics**
+3. **Input sensor**: your rain amount source (mm), typically an OpenWeatherMap rain sensor
+4. **State characteristic**: `sum`
+5. **Maximum age**: `48 hours`
+6. Name the helper **Rain observed 48h**
+7. Set entity_id to `sensor.rain_observed_48h` (or keep default if it matches)
 
-Then in `homeassistant/packages/nedorachio.yaml`, set:
+This gives Nedorachio a rolling 48-hour rain accumulation in mm.
 
-- `weather.your_local_forecast` -> your OpenWeatherMap weather entity
-- `sensor.rain_observed_48h` -> the template sensor above
+If you cannot produce a suitable rain input sensor for Statistics, use a
+template fallback that computes a 48-hour total from your weather forecast and
+name it `sensor.rain_observed_48h`.
 
 ---
 
