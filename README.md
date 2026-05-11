@@ -62,14 +62,20 @@ Pressure transducer linear calibration is set in
 The voltages refer to the **divider midpoint** (V_adc ≈ 0.667 × V_transducer
 with the 10k+20k divider used in this wiring).
 
-Flow rate and total gallons use the EveryDrop K/offset equation with HA-tunable
-numbers:
-- `number.nedorachio_irrigation_controller_flow_meter_k_factor` (default `0.322`)
-- `number.nedorachio_irrigation_controller_flow_meter_offset_hz` (default `0.2`)
+Flow rate and total gallons are derived from pulse totals using calibrated
+`pulses_per_gallon`.
+
+Why not use the meter's nominal K/offset equation directly in firmware?
+In this build, the meter signal is conditioned through a 4N35 isolation stage
+and GPIO edge filtering. That end-to-end path changes the effective pulse
+stream seen by ESPHome compared with the meter's ideal electrical model, so
+field-calibrated `pulses_per_gallon` matches real delivered gallons more
+reliably than nominal constants.
 
 `pulses_per_gallon` (HA
-`number.nedorachio_irrigation_controller_pulses_per_gallon`, default `374.0`)
-is still used for legacy per-zone run gallons in the engine/stats path.
+`number.nedorachio_irrigation_controller_pulses_per_gallon`) defaults to
+`344.4` from controlled-run calibration. Recalibrate in HA when hardware or
+signal conditioning changes.
 
 ### Perfboard wiring schematic (shared 12V PSU + 4N35 flow isolation)
 
