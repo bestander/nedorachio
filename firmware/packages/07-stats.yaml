@@ -229,6 +229,19 @@ globals:
     type: uint32_t
     restore_value: true
     initial_value: '0'
+  # Vendor K/offset-based lifetime total (integrated from pulse frequency).
+  - id: flow_total_gallons_k
+    type: float
+    restore_value: true
+    initial_value: '0'
+  - id: flow_total_last_pulses
+    type: uint32_t
+    restore_value: false
+    initial_value: '0'
+  - id: flow_total_last_ms
+    type: uint32_t
+    restore_value: false
+    initial_value: '0'
   - id: stats_last_rollover_day_of_year
     type: int
     restore_value: true
@@ -583,12 +596,7 @@ sensor:
     update_interval: 5s
     accuracy_decimals: 1
     unit_of_measurement: "gal"
-    lambda: |-
-      float ppg = id(pulses_per_gallon).state;
-      if (!(ppg > 0.0f)) return 0.0f;
-      float pulses_total = id(flow_pulses_total).state;
-      if (!(pulses_total >= 0.0f)) return 0.0f;
-      return pulses_total / ppg;
+    lambda: 'return id(flow_total_gallons_k);'
   - platform: template
     name: "Gallons today"
     id: gallons_today_sensor
@@ -618,6 +626,37 @@ sensor:
 
 # Daily/monthly rollover.
 interval:
+  - interval: 1s
+    then:
+      - lambda: |-
+          float pulses_total_f = id(flow_pulses_total).state;
+          if (!(pulses_total_f >= 0.0f)) return;
+          uint32_t total = (uint32_t)pulses_total_f;
+          uint32_t now_ms = millis();
+          if (id(flow_total_last_ms) == 0) {
+            id(flow_total_last_ms) = now_ms;
+            id(flow_total_last_pulses) = total;
+            return;
+          }
+          uint32_t dt_ms = now_ms - id(flow_total_last_ms);
+          if (dt_ms < 500) return;
+          int32_t dp = (int32_t)total - (int32_t)id(flow_total_last_pulses);
+          if (dp < 0) {
+            id(flow_total_last_ms) = now_ms;
+            id(flow_total_last_pulses) = total;
+            return;
+          }
+          float hz = ((float)dp) * 1000.0f / (float)dt_ms;
+          float k = id(flow_meter_k_factor).state;
+          float off = id(flow_meter_offset_hz).state;
+          float inst_gpm = 0.0f;
+          if ((dp > 0 || hz > 0.0f) && k > 0.0f) {
+            inst_gpm = (hz + off) * k;
+          }
+          if (!(inst_gpm >= 0.0f)) inst_gpm = 0.0f;
+          id(flow_total_gallons_k) += inst_gpm * ((float)dt_ms / 60000.0f);
+          id(flow_total_last_ms) = now_ms;
+          id(flow_total_last_pulses) = total;
   - interval: 60s
     then:
       - lambda: |-

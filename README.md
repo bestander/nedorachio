@@ -26,7 +26,9 @@ notifications.
 - EveryDropMeter Model 1004-EX flow meter (2-wire pulse + power interface).
 - 0-100 PSI 0-5V pressure transducer (powered from shared 12V rail).
 - Perfboard front-end parts:
-  - Flow input network: 4N35, 2.2kΩ (Rpullup), 2.2kΩ (Rled), 10kΩ.
+  - Flow input network: 4N35, 1kΩ (Rpullup), 2.2kΩ (Rled), 10kΩ.
+    - Note: EveryDrop's electrical spec recommends <= 1.8k source impedance at
+      12V (1k preferred). This build uses 1k for Rpullup.
   - Pressure ADC divider: 10kΩ, 20kΩ (optional 100nF filter cap).
 
 ### GPIO map
@@ -60,9 +62,14 @@ Pressure transducer linear calibration is set in
 The voltages refer to the **divider midpoint** (V_adc ≈ 0.667 × V_transducer
 with the 10k+20k divider used in this wiring).
 
-`pulses_per_gallon` (HA `number.nedorachio_pulses_per_gallon`) defaults to
-`10.0`. Calibrate during cutover by filling a 5-gallon bucket and dividing
-counted pulses by 5.
+Flow rate and total gallons use the EveryDrop K/offset equation with HA-tunable
+numbers:
+- `number.nedorachio_irrigation_controller_flow_meter_k_factor` (default `0.322`)
+- `number.nedorachio_irrigation_controller_flow_meter_offset_hz` (default `0.2`)
+
+`pulses_per_gallon` (HA
+`number.nedorachio_irrigation_controller_pulses_per_gallon`, default `374.0`)
+is still used for legacy per-zone run gallons in the engine/stats path.
 
 ### Perfboard wiring schematic (shared 12V PSU + 4N35 flow isolation)
 
@@ -82,7 +89,7 @@ FLOW METER (EveryDrop 1004-EX, 2-wire) -> 4N35 -> ESP32 GPIO19
 Define RED_NODE as this shared junction:
   Meter RED (+signal), Rpullup lower end, and 4N35 Pin2 (cathode).
 
-+12V NET -- Rpullup 2.2k ------------------------> RED_NODE
++12V NET -- Rpullup 1k --------------------------> RED_NODE
 +12V NET -- Rled 2.2k ----> 4N35 Pin1 (Anode)
 RED_NODE ------------------> 4N35 Pin2 (Cathode)
 Meter RED -----------------> RED_NODE
@@ -106,7 +113,7 @@ GPIO19 -------------------- Rgpio 10k -----------> +3V3
                               +-- GPIO19 has 10k pull-up to 3.3V
 
 RED_NODE wiring (explicit):
-  +12V -- Rpullup 2.2k --+
+  +12V -- Rpullup 1k --+
                          +-- Meter RED
                          +-- 4N35 Pin2 (Cathode)
 
@@ -122,6 +129,30 @@ Pressure OUT ---- R4 10k ---- PRESS_GPIO_NODE ------> ESP32 GPIO34
                                 +---- R5 20k -------> GND_ESP
                                 |
                                 +---- C2 100nF ------> GND_ESP  [optional]
+
+======================================================================
+RAIN SENSOR + LOCAL BUTTONS + STATUS LED (ESP32 side)
+======================================================================
+
+RAIN SENSOR (normally-closed contact to GND when wet):
+  GPIO18 -------------------------------> Rain sensor input
+  GPIO18 uses ESP internal pull-up (`pullup: true` in firmware)
+  Rain sensor other lead ---------------> GND_ESP
+
+START/STOP BUTTON (momentary, normally-open):
+  GPIO21 -------------------------------> One side of button
+  GPIO21 uses ESP internal pull-up (`pullup: true`)
+  Other side of button -----------------> GND_ESP
+
+ZONE-SELECT BUTTON (momentary, normally-open):
+  GPIO22 -------------------------------> One side of button
+  GPIO22 uses ESP internal pull-up (`pullup: true`)
+  Other side of button -----------------> GND_ESP
+
+STATUS LED (active-high in current firmware):
+  GPIO4 ---- Rled_status 330..1k ------> LED anode (+)
+  LED cathode (-) ----------------------> GND_ESP
+  (Set `inverted: true` in firmware if your LED wiring is active-low.)
 
 ======================================================================
 POWER / REFERENCE (MANDATORY)
