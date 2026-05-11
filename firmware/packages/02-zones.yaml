@@ -230,6 +230,7 @@ button:
     name: "Emergency stop all"
     id: emergency_stop_all
     icon: mdi:stop-circle
+    internal: true
     on_press:
       - script.execute: cancel_everything
 
@@ -378,7 +379,7 @@ esphome:
     then:
       - script.execute: cancel_everything
 
-# Periodic safety: per-zone runtime cap (uses `zone_N_max_runtime_min` tunable).
+# Periodic safety: runtime cap (uses global `maximum_runtime_minutes` tunable).
 interval:
   - interval: 1s
     then:
@@ -387,17 +388,7 @@ interval:
             lambda: |-
               if (id(currently_on_zone) == 0) return false;
               uint32_t elapsed_ms = millis() - id(zone_started_at_ms);
-              float cap_min = 60.0f;
-              switch (id(currently_on_zone)) {
-                case 1: cap_min = id(zone_1_max_runtime_min).state; break;
-                case 2: cap_min = id(zone_2_max_runtime_min).state; break;
-                case 3: cap_min = id(zone_3_max_runtime_min).state; break;
-                case 4: cap_min = id(zone_4_max_runtime_min).state; break;
-                case 5: cap_min = id(zone_5_max_runtime_min).state; break;
-                case 6: cap_min = id(zone_6_max_runtime_min).state; break;
-                case 7: cap_min = id(zone_7_max_runtime_min).state; break;
-                case 8: cap_min = id(zone_8_max_runtime_min).state; break;
-              }
+              float cap_min = id(maximum_runtime_minutes).state;
               return elapsed_ms > (uint32_t)(cap_min * 60.0f * 1000.0f);
           then:
             - logger.log: "Runtime cap exceeded; cutting zone."

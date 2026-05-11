@@ -246,79 +246,246 @@ number:
     step: 1
     unit_of_measurement: "min"
 
+  # Per-zone schedule mode: 0=time_target, 1=gallons_target.
   - platform: template
-    name: "Zone 1 max runtime minutes"
-    id: zone_1_max_runtime_min
+    name: "Zone 1 schedule mode"
+    id: zone_1_schedule_mode
     optimistic: true
     restore_value: true
-    initial_value: 60
-    min_value: 1
-    max_value: 240
+    initial_value: 1
+    min_value: 0
+    max_value: 1
     step: 1
-    unit_of_measurement: "min"
   - platform: template
-    name: "Zone 2 max runtime minutes"
-    id: zone_2_max_runtime_min
+    name: "Zone 2 schedule mode"
+    id: zone_2_schedule_mode
     optimistic: true
     restore_value: true
-    initial_value: 60
-    min_value: 1
-    max_value: 240
+    initial_value: 1
+    min_value: 0
+    max_value: 1
     step: 1
-    unit_of_measurement: "min"
   - platform: template
-    name: "Zone 3 max runtime minutes"
-    id: zone_3_max_runtime_min
+    name: "Zone 3 schedule mode"
+    id: zone_3_schedule_mode
     optimistic: true
     restore_value: true
-    initial_value: 60
-    min_value: 1
-    max_value: 240
+    initial_value: 1
+    min_value: 0
+    max_value: 1
     step: 1
-    unit_of_measurement: "min"
   - platform: template
-    name: "Zone 4 max runtime minutes"
-    id: zone_4_max_runtime_min
+    name: "Zone 4 schedule mode"
+    id: zone_4_schedule_mode
     optimistic: true
     restore_value: true
-    initial_value: 60
-    min_value: 1
-    max_value: 240
+    initial_value: 1
+    min_value: 0
+    max_value: 1
     step: 1
-    unit_of_measurement: "min"
   - platform: template
-    name: "Zone 5 max runtime minutes"
-    id: zone_5_max_runtime_min
+    name: "Zone 5 schedule mode"
+    id: zone_5_schedule_mode
     optimistic: true
     restore_value: true
-    initial_value: 60
-    min_value: 1
-    max_value: 240
+    initial_value: 1
+    min_value: 0
+    max_value: 1
     step: 1
-    unit_of_measurement: "min"
   - platform: template
-    name: "Zone 6 max runtime minutes"
-    id: zone_6_max_runtime_min
+    name: "Zone 6 schedule mode"
+    id: zone_6_schedule_mode
     optimistic: true
     restore_value: true
-    initial_value: 60
-    min_value: 1
-    max_value: 240
+    initial_value: 1
+    min_value: 0
+    max_value: 1
     step: 1
-    unit_of_measurement: "min"
   - platform: template
-    name: "Zone 7 max runtime minutes"
-    id: zone_7_max_runtime_min
+    name: "Zone 7 schedule mode"
+    id: zone_7_schedule_mode
     optimistic: true
     restore_value: true
-    initial_value: 60
-    min_value: 1
-    max_value: 240
+    initial_value: 1
+    min_value: 0
+    max_value: 1
     step: 1
-    unit_of_measurement: "min"
   - platform: template
-    name: "Zone 8 max runtime minutes"
-    id: zone_8_max_runtime_min
+    name: "Zone 8 schedule mode"
+    id: zone_8_schedule_mode
+    optimistic: true
+    restore_value: true
+    initial_value: 1
+    min_value: 0
+    max_value: 1
+    step: 1
+
+  # Gallons-target settings.
+  - platform: template
+    name: "Zone 1 goal gallons per cycle"
+    id: zone_1_goal_gallons_per_cycle
+    optimistic: true
+    restore_value: true
+    initial_value: 100
+    min_value: 1
+    max_value: 2000
+    step: 1
+    unit_of_measurement: "gal"
+  - platform: template
+    name: "Zone 2 goal gallons per cycle"
+    id: zone_2_goal_gallons_per_cycle
+    optimistic: true
+    restore_value: true
+    initial_value: 100
+    min_value: 1
+    max_value: 2000
+    step: 1
+    unit_of_measurement: "gal"
+  - platform: template
+    name: "Zone 3 goal gallons per cycle"
+    id: zone_3_goal_gallons_per_cycle
+    optimistic: true
+    restore_value: true
+    initial_value: 100
+    min_value: 1
+    max_value: 2000
+    step: 1
+    unit_of_measurement: "gal"
+  - platform: template
+    name: "Zone 4 goal gallons per cycle"
+    id: zone_4_goal_gallons_per_cycle
+    optimistic: true
+    restore_value: true
+    initial_value: 100
+    min_value: 1
+    max_value: 2000
+    step: 1
+    unit_of_measurement: "gal"
+  - platform: template
+    name: "Zone 5 goal gallons per cycle"
+    id: zone_5_goal_gallons_per_cycle
+    optimistic: true
+    restore_value: true
+    initial_value: 100
+    min_value: 1
+    max_value: 2000
+    step: 1
+    unit_of_measurement: "gal"
+  - platform: template
+    name: "Zone 6 goal gallons per cycle"
+    id: zone_6_goal_gallons_per_cycle
+    optimistic: true
+    restore_value: true
+    initial_value: 100
+    min_value: 1
+    max_value: 2000
+    step: 1
+    unit_of_measurement: "gal"
+  - platform: template
+    name: "Zone 7 goal gallons per cycle"
+    id: zone_7_goal_gallons_per_cycle
+    optimistic: true
+    restore_value: true
+    initial_value: 100
+    min_value: 1
+    max_value: 2000
+    step: 1
+    unit_of_measurement: "gal"
+  - platform: template
+    name: "Zone 8 goal gallons per cycle"
+    id: zone_8_goal_gallons_per_cycle
+    optimistic: true
+    restore_value: true
+    initial_value: 100
+    min_value: 1
+    max_value: 2000
+    step: 1
+    unit_of_measurement: "gal"
+
+  - platform: template
+    name: "Zone 1 cycle gallons"
+    id: zone_1_cycle_gallons
+    optimistic: true
+    restore_value: true
+    initial_value: 50
+    min_value: 1
+    max_value: 1000
+    step: 1
+    unit_of_measurement: "gal"
+  - platform: template
+    name: "Zone 2 cycle gallons"
+    id: zone_2_cycle_gallons
+    optimistic: true
+    restore_value: true
+    initial_value: 50
+    min_value: 1
+    max_value: 1000
+    step: 1
+    unit_of_measurement: "gal"
+  - platform: template
+    name: "Zone 3 cycle gallons"
+    id: zone_3_cycle_gallons
+    optimistic: true
+    restore_value: true
+    initial_value: 50
+    min_value: 1
+    max_value: 1000
+    step: 1
+    unit_of_measurement: "gal"
+  - platform: template
+    name: "Zone 4 cycle gallons"
+    id: zone_4_cycle_gallons
+    optimistic: true
+    restore_value: true
+    initial_value: 50
+    min_value: 1
+    max_value: 1000
+    step: 1
+    unit_of_measurement: "gal"
+  - platform: template
+    name: "Zone 5 cycle gallons"
+    id: zone_5_cycle_gallons
+    optimistic: true
+    restore_value: true
+    initial_value: 50
+    min_value: 1
+    max_value: 1000
+    step: 1
+    unit_of_measurement: "gal"
+  - platform: template
+    name: "Zone 6 cycle gallons"
+    id: zone_6_cycle_gallons
+    optimistic: true
+    restore_value: true
+    initial_value: 50
+    min_value: 1
+    max_value: 1000
+    step: 1
+    unit_of_measurement: "gal"
+  - platform: template
+    name: "Zone 7 cycle gallons"
+    id: zone_7_cycle_gallons
+    optimistic: true
+    restore_value: true
+    initial_value: 50
+    min_value: 1
+    max_value: 1000
+    step: 1
+    unit_of_measurement: "gal"
+  - platform: template
+    name: "Zone 8 cycle gallons"
+    id: zone_8_cycle_gallons
+    optimistic: true
+    restore_value: true
+    initial_value: 50
+    min_value: 1
+    max_value: 1000
+    step: 1
+    unit_of_measurement: "gal"
+
+  - platform: template
+    name: "Maximum runtime minutes"
+    id: maximum_runtime_minutes
     optimistic: true
     restore_value: true
     initial_value: 60
@@ -328,7 +495,7 @@ number:
     unit_of_measurement: "min"
 
   - platform: template
-    name: "Zone 1 min flow gpm"
+    name: "Zone 1 minimum flow gpm"
     id: zone_1_min_flow_gpm
     optimistic: true
     restore_value: true
@@ -338,7 +505,7 @@ number:
     step: 0.1
     unit_of_measurement: "gpm"
   - platform: template
-    name: "Zone 2 min flow gpm"
+    name: "Zone 2 minimum flow gpm"
     id: zone_2_min_flow_gpm
     optimistic: true
     restore_value: true
@@ -348,7 +515,7 @@ number:
     step: 0.1
     unit_of_measurement: "gpm"
   - platform: template
-    name: "Zone 3 min flow gpm"
+    name: "Zone 3 minimum flow gpm"
     id: zone_3_min_flow_gpm
     optimistic: true
     restore_value: true
@@ -358,7 +525,7 @@ number:
     step: 0.1
     unit_of_measurement: "gpm"
   - platform: template
-    name: "Zone 4 min flow gpm"
+    name: "Zone 4 minimum flow gpm"
     id: zone_4_min_flow_gpm
     optimistic: true
     restore_value: true
@@ -368,7 +535,7 @@ number:
     step: 0.1
     unit_of_measurement: "gpm"
   - platform: template
-    name: "Zone 5 min flow gpm"
+    name: "Zone 5 minimum flow gpm"
     id: zone_5_min_flow_gpm
     optimistic: true
     restore_value: true
@@ -378,7 +545,7 @@ number:
     step: 0.1
     unit_of_measurement: "gpm"
   - platform: template
-    name: "Zone 6 min flow gpm"
+    name: "Zone 6 minimum flow gpm"
     id: zone_6_min_flow_gpm
     optimistic: true
     restore_value: true
@@ -388,7 +555,7 @@ number:
     step: 0.1
     unit_of_measurement: "gpm"
   - platform: template
-    name: "Zone 7 min flow gpm"
+    name: "Zone 7 minimum flow gpm"
     id: zone_7_min_flow_gpm
     optimistic: true
     restore_value: true
@@ -398,7 +565,7 @@ number:
     step: 0.1
     unit_of_measurement: "gpm"
   - platform: template
-    name: "Zone 8 min flow gpm"
+    name: "Zone 8 minimum flow gpm"
     id: zone_8_min_flow_gpm
     optimistic: true
     restore_value: true
@@ -409,7 +576,7 @@ number:
     unit_of_measurement: "gpm"
 
   - platform: template
-    name: "Zone 1 max flow gpm"
+    name: "Zone 1 maximum flow gpm"
     id: zone_1_max_flow_gpm
     optimistic: true
     restore_value: true
@@ -419,7 +586,7 @@ number:
     step: 0.1
     unit_of_measurement: "gpm"
   - platform: template
-    name: "Zone 2 max flow gpm"
+    name: "Zone 2 maximum flow gpm"
     id: zone_2_max_flow_gpm
     optimistic: true
     restore_value: true
@@ -429,7 +596,7 @@ number:
     step: 0.1
     unit_of_measurement: "gpm"
   - platform: template
-    name: "Zone 3 max flow gpm"
+    name: "Zone 3 maximum flow gpm"
     id: zone_3_max_flow_gpm
     optimistic: true
     restore_value: true
@@ -439,7 +606,7 @@ number:
     step: 0.1
     unit_of_measurement: "gpm"
   - platform: template
-    name: "Zone 4 max flow gpm"
+    name: "Zone 4 maximum flow gpm"
     id: zone_4_max_flow_gpm
     optimistic: true
     restore_value: true
@@ -449,7 +616,7 @@ number:
     step: 0.1
     unit_of_measurement: "gpm"
   - platform: template
-    name: "Zone 5 max flow gpm"
+    name: "Zone 5 maximum flow gpm"
     id: zone_5_max_flow_gpm
     optimistic: true
     restore_value: true
@@ -459,7 +626,7 @@ number:
     step: 0.1
     unit_of_measurement: "gpm"
   - platform: template
-    name: "Zone 6 max flow gpm"
+    name: "Zone 6 maximum flow gpm"
     id: zone_6_max_flow_gpm
     optimistic: true
     restore_value: true
@@ -469,7 +636,7 @@ number:
     step: 0.1
     unit_of_measurement: "gpm"
   - platform: template
-    name: "Zone 7 max flow gpm"
+    name: "Zone 7 maximum flow gpm"
     id: zone_7_max_flow_gpm
     optimistic: true
     restore_value: true
@@ -479,7 +646,7 @@ number:
     step: 0.1
     unit_of_measurement: "gpm"
   - platform: template
-    name: "Zone 8 max flow gpm"
+    name: "Zone 8 maximum flow gpm"
     id: zone_8_max_flow_gpm
     optimistic: true
     restore_value: true
@@ -488,6 +655,331 @@ number:
     max_value: 100
     step: 0.1
     unit_of_measurement: "gpm"
+
+  # Per-zone PSI policy.
+  - platform: template
+    name: "Zone 1 start minimum PSI"
+    id: zone_1_start_minimum_psi
+    optimistic: true
+    restore_value: true
+    initial_value: 35
+    min_value: 0
+    max_value: 200
+    step: 1
+    unit_of_measurement: "psi"
+  - platform: template
+    name: "Zone 2 start minimum PSI"
+    id: zone_2_start_minimum_psi
+    optimistic: true
+    restore_value: true
+    initial_value: 35
+    min_value: 0
+    max_value: 200
+    step: 1
+    unit_of_measurement: "psi"
+  - platform: template
+    name: "Zone 3 start minimum PSI"
+    id: zone_3_start_minimum_psi
+    optimistic: true
+    restore_value: true
+    initial_value: 35
+    min_value: 0
+    max_value: 200
+    step: 1
+    unit_of_measurement: "psi"
+  - platform: template
+    name: "Zone 4 start minimum PSI"
+    id: zone_4_start_minimum_psi
+    optimistic: true
+    restore_value: true
+    initial_value: 35
+    min_value: 0
+    max_value: 200
+    step: 1
+    unit_of_measurement: "psi"
+  - platform: template
+    name: "Zone 5 start minimum PSI"
+    id: zone_5_start_minimum_psi
+    optimistic: true
+    restore_value: true
+    initial_value: 35
+    min_value: 0
+    max_value: 200
+    step: 1
+    unit_of_measurement: "psi"
+  - platform: template
+    name: "Zone 6 start minimum PSI"
+    id: zone_6_start_minimum_psi
+    optimistic: true
+    restore_value: true
+    initial_value: 35
+    min_value: 0
+    max_value: 200
+    step: 1
+    unit_of_measurement: "psi"
+  - platform: template
+    name: "Zone 7 start minimum PSI"
+    id: zone_7_start_minimum_psi
+    optimistic: true
+    restore_value: true
+    initial_value: 35
+    min_value: 0
+    max_value: 200
+    step: 1
+    unit_of_measurement: "psi"
+  - platform: template
+    name: "Zone 8 start minimum PSI"
+    id: zone_8_start_minimum_psi
+    optimistic: true
+    restore_value: true
+    initial_value: 35
+    min_value: 0
+    max_value: 200
+    step: 1
+    unit_of_measurement: "psi"
+
+  - platform: template
+    name: "Zone 1 start maximum PSI"
+    id: zone_1_start_maximum_psi
+    optimistic: true
+    restore_value: true
+    initial_value: 85
+    min_value: 0
+    max_value: 200
+    step: 1
+    unit_of_measurement: "psi"
+  - platform: template
+    name: "Zone 2 start maximum PSI"
+    id: zone_2_start_maximum_psi
+    optimistic: true
+    restore_value: true
+    initial_value: 85
+    min_value: 0
+    max_value: 200
+    step: 1
+    unit_of_measurement: "psi"
+  - platform: template
+    name: "Zone 3 start maximum PSI"
+    id: zone_3_start_maximum_psi
+    optimistic: true
+    restore_value: true
+    initial_value: 85
+    min_value: 0
+    max_value: 200
+    step: 1
+    unit_of_measurement: "psi"
+  - platform: template
+    name: "Zone 4 start maximum PSI"
+    id: zone_4_start_maximum_psi
+    optimistic: true
+    restore_value: true
+    initial_value: 85
+    min_value: 0
+    max_value: 200
+    step: 1
+    unit_of_measurement: "psi"
+  - platform: template
+    name: "Zone 5 start maximum PSI"
+    id: zone_5_start_maximum_psi
+    optimistic: true
+    restore_value: true
+    initial_value: 85
+    min_value: 0
+    max_value: 200
+    step: 1
+    unit_of_measurement: "psi"
+  - platform: template
+    name: "Zone 6 start maximum PSI"
+    id: zone_6_start_maximum_psi
+    optimistic: true
+    restore_value: true
+    initial_value: 85
+    min_value: 0
+    max_value: 200
+    step: 1
+    unit_of_measurement: "psi"
+  - platform: template
+    name: "Zone 7 start maximum PSI"
+    id: zone_7_start_maximum_psi
+    optimistic: true
+    restore_value: true
+    initial_value: 85
+    min_value: 0
+    max_value: 200
+    step: 1
+    unit_of_measurement: "psi"
+  - platform: template
+    name: "Zone 8 start maximum PSI"
+    id: zone_8_start_maximum_psi
+    optimistic: true
+    restore_value: true
+    initial_value: 85
+    min_value: 0
+    max_value: 200
+    step: 1
+    unit_of_measurement: "psi"
+
+  - platform: template
+    name: "Zone 1 minimum running PSI"
+    id: zone_1_minimum_running_psi
+    optimistic: true
+    restore_value: true
+    initial_value: 20
+    min_value: 0
+    max_value: 200
+    step: 1
+    unit_of_measurement: "psi"
+  - platform: template
+    name: "Zone 2 minimum running PSI"
+    id: zone_2_minimum_running_psi
+    optimistic: true
+    restore_value: true
+    initial_value: 20
+    min_value: 0
+    max_value: 200
+    step: 1
+    unit_of_measurement: "psi"
+  - platform: template
+    name: "Zone 3 minimum running PSI"
+    id: zone_3_minimum_running_psi
+    optimistic: true
+    restore_value: true
+    initial_value: 20
+    min_value: 0
+    max_value: 200
+    step: 1
+    unit_of_measurement: "psi"
+  - platform: template
+    name: "Zone 4 minimum running PSI"
+    id: zone_4_minimum_running_psi
+    optimistic: true
+    restore_value: true
+    initial_value: 20
+    min_value: 0
+    max_value: 200
+    step: 1
+    unit_of_measurement: "psi"
+  - platform: template
+    name: "Zone 5 minimum running PSI"
+    id: zone_5_minimum_running_psi
+    optimistic: true
+    restore_value: true
+    initial_value: 20
+    min_value: 0
+    max_value: 200
+    step: 1
+    unit_of_measurement: "psi"
+  - platform: template
+    name: "Zone 6 minimum running PSI"
+    id: zone_6_minimum_running_psi
+    optimistic: true
+    restore_value: true
+    initial_value: 20
+    min_value: 0
+    max_value: 200
+    step: 1
+    unit_of_measurement: "psi"
+  - platform: template
+    name: "Zone 7 minimum running PSI"
+    id: zone_7_minimum_running_psi
+    optimistic: true
+    restore_value: true
+    initial_value: 20
+    min_value: 0
+    max_value: 200
+    step: 1
+    unit_of_measurement: "psi"
+  - platform: template
+    name: "Zone 8 minimum running PSI"
+    id: zone_8_minimum_running_psi
+    optimistic: true
+    restore_value: true
+    initial_value: 20
+    min_value: 0
+    max_value: 200
+    step: 1
+    unit_of_measurement: "psi"
+
+  - platform: template
+    name: "Zone 1 minimum running PSI grace seconds"
+    id: zone_1_minimum_running_psi_grace_seconds
+    optimistic: true
+    restore_value: true
+    initial_value: 600
+    min_value: 1
+    max_value: 7200
+    step: 1
+    unit_of_measurement: "s"
+  - platform: template
+    name: "Zone 2 minimum running PSI grace seconds"
+    id: zone_2_minimum_running_psi_grace_seconds
+    optimistic: true
+    restore_value: true
+    initial_value: 600
+    min_value: 1
+    max_value: 7200
+    step: 1
+    unit_of_measurement: "s"
+  - platform: template
+    name: "Zone 3 minimum running PSI grace seconds"
+    id: zone_3_minimum_running_psi_grace_seconds
+    optimistic: true
+    restore_value: true
+    initial_value: 600
+    min_value: 1
+    max_value: 7200
+    step: 1
+    unit_of_measurement: "s"
+  - platform: template
+    name: "Zone 4 minimum running PSI grace seconds"
+    id: zone_4_minimum_running_psi_grace_seconds
+    optimistic: true
+    restore_value: true
+    initial_value: 600
+    min_value: 1
+    max_value: 7200
+    step: 1
+    unit_of_measurement: "s"
+  - platform: template
+    name: "Zone 5 minimum running PSI grace seconds"
+    id: zone_5_minimum_running_psi_grace_seconds
+    optimistic: true
+    restore_value: true
+    initial_value: 600
+    min_value: 1
+    max_value: 7200
+    step: 1
+    unit_of_measurement: "s"
+  - platform: template
+    name: "Zone 6 minimum running PSI grace seconds"
+    id: zone_6_minimum_running_psi_grace_seconds
+    optimistic: true
+    restore_value: true
+    initial_value: 600
+    min_value: 1
+    max_value: 7200
+    step: 1
+    unit_of_measurement: "s"
+  - platform: template
+    name: "Zone 7 minimum running PSI grace seconds"
+    id: zone_7_minimum_running_psi_grace_seconds
+    optimistic: true
+    restore_value: true
+    initial_value: 600
+    min_value: 1
+    max_value: 7200
+    step: 1
+    unit_of_measurement: "s"
+  - platform: template
+    name: "Zone 8 minimum running PSI grace seconds"
+    id: zone_8_minimum_running_psi_grace_seconds
+    optimistic: true
+    restore_value: true
+    initial_value: 600
+    min_value: 1
+    max_value: 7200
+    step: 1
+    unit_of_measurement: "s"
 
   # --- Sensor calibration ---
   - platform: template
@@ -641,27 +1133,17 @@ number:
             id(rain_mm_last_pushed_epoch).publish_state((uint32_t)id(effective_now_epoch).state);
           }
 
-  # --- Retry ---
+  # --- Attempt behavior ---
   - platform: template
-    name: "Retry count"
-    id: retry_count
+    name: "Attempt cooldown minutes"
+    id: attempt_cooldown_minutes
     optimistic: true
     restore_value: true
-    initial_value: 1
+    initial_value: 20
     min_value: 0
-    max_value: 5
+    max_value: 720
     step: 1
-
-  - platform: template
-    name: "Retry delay seconds"
-    id: retry_delay_s
-    optimistic: true
-    restore_value: true
-    initial_value: 60
-    min_value: 5
-    max_value: 600
-    step: 1
-    unit_of_measurement: "s"
+    unit_of_measurement: "min"
 
   # --- Local controls ---
   - platform: template
@@ -731,10 +1213,22 @@ number:
     max_value: 59
     step: 1
 
+  # Weekly blackout bitmask (bit0=Mon .. bit6=Sun). When set, new scheduled
+  # starts are blocked for that weekday.
+  - platform: template
+    name: "Blackout weekday bitmask"
+    id: blackout_weekday_bitmask
+    optimistic: true
+    restore_value: true
+    initial_value: 0
+    min_value: 0
+    max_value: 127
+    step: 1
+
   # Per-zone minimum hours between waterings. Cadence is measured from the
   # *finish* of the previous run (manual or scheduled — both reset the timer).
   - platform: template
-    name: "Zone 1 min interval hours"
+    name: "Zone 1 minimum interval hours"
     id: zone_1_min_interval_hours
     optimistic: true
     restore_value: true
@@ -744,7 +1238,7 @@ number:
     step: 1
     unit_of_measurement: "h"
   - platform: template
-    name: "Zone 2 min interval hours"
+    name: "Zone 2 minimum interval hours"
     id: zone_2_min_interval_hours
     optimistic: true
     restore_value: true
@@ -754,7 +1248,7 @@ number:
     step: 1
     unit_of_measurement: "h"
   - platform: template
-    name: "Zone 3 min interval hours"
+    name: "Zone 3 minimum interval hours"
     id: zone_3_min_interval_hours
     optimistic: true
     restore_value: true
@@ -764,7 +1258,7 @@ number:
     step: 1
     unit_of_measurement: "h"
   - platform: template
-    name: "Zone 4 min interval hours"
+    name: "Zone 4 minimum interval hours"
     id: zone_4_min_interval_hours
     optimistic: true
     restore_value: true
@@ -774,7 +1268,7 @@ number:
     step: 1
     unit_of_measurement: "h"
   - platform: template
-    name: "Zone 5 min interval hours"
+    name: "Zone 5 minimum interval hours"
     id: zone_5_min_interval_hours
     optimistic: true
     restore_value: true
@@ -784,7 +1278,7 @@ number:
     step: 1
     unit_of_measurement: "h"
   - platform: template
-    name: "Zone 6 min interval hours"
+    name: "Zone 6 minimum interval hours"
     id: zone_6_min_interval_hours
     optimistic: true
     restore_value: true
@@ -794,7 +1288,7 @@ number:
     step: 1
     unit_of_measurement: "h"
   - platform: template
-    name: "Zone 7 min interval hours"
+    name: "Zone 7 minimum interval hours"
     id: zone_7_min_interval_hours
     optimistic: true
     restore_value: true
@@ -804,7 +1298,7 @@ number:
     step: 1
     unit_of_measurement: "h"
   - platform: template
-    name: "Zone 8 min interval hours"
+    name: "Zone 8 minimum interval hours"
     id: zone_8_min_interval_hours
     optimistic: true
     restore_value: true
@@ -851,45 +1345,53 @@ switch:
     id: gate_rain_sensor
     optimistic: true
     restore_mode: RESTORE_DEFAULT_ON
+    internal: true
 
   - platform: template
     name: "Gate: static pressure preflight"
     id: gate_static_pressure_preflight
     optimistic: true
     restore_mode: RESTORE_DEFAULT_ON
+    internal: true
 
   - platform: template
     name: "Alarm gate: phantom flow"
     id: gate_alarm_phantom_flow
     optimistic: true
     restore_mode: RESTORE_DEFAULT_ON
+    internal: true
 
   - platform: template
     name: "Alarm gate: no flow"
     id: gate_alarm_no_flow
     optimistic: true
     restore_mode: RESTORE_DEFAULT_ON
+    internal: true
 
   - platform: template
     name: "Alarm gate: high flow"
     id: gate_alarm_high_flow
     optimistic: true
     restore_mode: RESTORE_DEFAULT_ON
+    internal: true
 
   - platform: template
     name: "Alarm gate: low pressure"
     id: gate_alarm_low_pressure
     optimistic: true
     restore_mode: RESTORE_DEFAULT_ON
+    internal: true
 
   - platform: template
     name: "Alarm gate: high pressure"
     id: gate_alarm_high_pressure
     optimistic: true
     restore_mode: RESTORE_DEFAULT_ON
+    internal: true
 
   - platform: template
     name: "High pressure cancels run"
     id: high_pressure_cancels_run
     optimistic: true
     restore_mode: RESTORE_DEFAULT_OFF
+    internal: true

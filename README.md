@@ -219,18 +219,21 @@ firmware/
 
 ## Home Assistant setup
 
-1. Copy `homeassistant/packages/nedorachio.yaml` into your HA config under
+1. Copy `homeassistant/packages/nedorachio.yaml` and
+   `homeassistant/packages/nedorachio_config.yaml` into your HA config under
    `packages/`. Make sure `configuration.yaml` has
    `homeassistant: packages: !include_dir_named packages`.
 2. Replace `weather.your_local_forecast` with your weather entity and
    `sensor.rain_observed_48h` with whatever observed-rain sensor you have.
    If you don't have one, the feeder writes `0` and the device falls back to
    the rain sensor and static-pressure gate.
-3. Reload automations. Within 10 minutes, `number.nedorachio_rain_mm_last_48h`
-   should be populated.
-4. Edit the `notify.notify` line in `nedorachio_alarm_notify` to use your
+3. Reload template entities and automations. On HA start (and every 30 minutes),
+   `script.nedorachio_apply_config_profile` re-applies the config profile to the
+   controller entities.
+4. Within 10 minutes, `number.nedorachio_rain_mm_last_48h` should be populated.
+5. Edit the `notify.notify` line in `nedorachio_alarm_notify` to use your
    actual notification target (e.g. `notify.mobile_app_yourphone`).
-5. Add a new dashboard view: Settings → Dashboards → Open the Lovelace
+6. Add a new dashboard view: Settings → Dashboards → Open the Lovelace
    dashboard → ⋮ → Edit Dashboard → ⋮ → Raw configuration editor → paste the
    contents of `homeassistant/packages/nedorachio_dashboard.yaml` under
    `views:`. Note that exact entity slugs depend on how HA names entities at
@@ -242,12 +245,11 @@ firmware/
 
 ### Scheduling model
 
-Per-zone cadence, not a weekly calendar. Each zone has:
+Per-zone cadence, not a weekly calendar. Each zone can run in one of two modes:
 
-- `zone_N_total_min` / `_cycle_min` / `_soak_min` — duration and cycle/soak
-  shape of one watering.
-- `zone_N_min_interval_hours` — minimum hours between waterings, measured
-  from the **finish** of the previous run (default 48h).
+- **time target**: `zone_N_total_min` / `_cycle_min` / `_soak_min`
+- **gallons target**: `zone_N_goal_gallons_per_cycle` / `_cycle_gallons` /
+  `_soak_min` with carry-forward progress across attempts
 
 A global watering window (`schedule_start_hour:minute` →
 `schedule_end_hour:minute`, default `00:00 → 08:00`) gates *when* a zone may
@@ -257,15 +259,20 @@ Every 60s the cadence evaluator picks the lowest-numbered enabled zone whose
 cadence is due, runs pre-flight, and fires it. Zones run one at a time;
 `sensor.next_due_zone` shows what's queued.
 
+Automatic retries are not count-limited; instead, the evaluator waits global
+`attempt_cooldown_minutes` between non-completed attempts.
+
 ### A normal day
 
 - Inside the watering window, the evaluator finds zone *N* due (now ≥
-  `zone_N_last_finished_epoch + zone_N_min_interval_hours·3600`).
+  `zone_N_last_finished_epoch + zone_N_minimum_interval_hours·3600`).
 - Pre-flight runs (master enable, time sync, rain sensor, rain forecast,
   static pressure, alarm-latch). If it fails, the cycle is aborted and the
   reason is logged.
-- The retry-aware single-zone runner executes cycle-and-soak: `cycle_min` on,
-  `soak_min` off, repeated until `total_min` accrues.
+- The runner executes either:
+  - time target: cycle-and-soak until `total_min` accrues
+  - gallons target: run until `cycle_gallons`, soak, repeat until
+    `goal_gallons_per_cycle` is reached
 - When the zone finishes (or is cancelled, or hits the runtime cap),
   `zone_N_last_finished_epoch` is stamped and persisted to NVS — the cadence
   resets from that point.
@@ -277,14 +284,9 @@ cadence is due, runs pre-flight, and fires it. Zones run one at a time;
 
 ### Manual run
 
-- `button.nedorachio_run_now_zone_N` runs zone N once with its configured
-  cycle/soak/total. Manual runs **reset the cadence** (the
-  `last_finished_epoch` is stamped just like a scheduled run).
 - `switch.nedorachio_zone_N` is the raw on/off control (still gated by the
-  master enable / e-stop / single-zone invariant). Toggling off also resets
-  the cadence.
-- `button.nedorachio_run_full_cycle` runs every enabled zone in sequence on
-  demand, ignoring cadence and window — useful for spring start-up.
+  master enable / e-stop / single-zone invariant). Toggling off stamps
+  `last_finished_epoch` and therefore resets cadence timing.
 
 ### Local controls
 
@@ -304,12 +306,10 @@ Two physical buttons and an LED on the device:
   selection's number so you can confirm without looking at HA. Selection
   persists across reboots.
 
-### Skipping a run
+### Schedule enable/disable
 
-- `button.nedorachio_skip_next_run` consumes the *next* cadence-driven fire
-  (the next zone the evaluator would otherwise start).
-- `switch.nedorachio_fallback_schedule_enabled` disables the cadence
-  evaluator indefinitely (manual runs and `run_full_cycle` still work).
+- `switch.nedorachio_fallback_schedule_enabled` disables the cadence evaluator
+  indefinitely. Manual per-zone switch control remains available.
 
 ### Clock survival across power loss
 
@@ -332,14 +332,15 @@ just before a power loss isn't forgotten.
 ### Alarm reference
 
 Every alarm latches `any_alarm_latched`, which blocks new pre-flights until
-cleared via `button.nedorachio_clear_fault`.
+cleared through maintenance actions (for example, local controls or an
+advanced/internal service call).
 
 | Alarm                            | Cause                                              | Action                  |
 |----------------------------------|----------------------------------------------------|-------------------------|
 | `alarm_pre_flight_failed`        | A pre-flight gate refused to start                 | Read `pre_flight_reason`; fix; clear fault. |
-| `alarm_runtime_exceeded`         | A zone ran longer than `zone_N_max_runtime_min`    | Inspect for stuck relay; clear fault. |
-| `alarm_no_flow`                  | gpm < `zone_N_min_flow_gpm` after `no_flow_grace_s` | Check pump/well/valve; retry or clear. |
-| `alarm_high_flow`                | gpm > `zone_N_max_flow_gpm` for `high_flow_grace_s` | Check for broken pipe; clear fault. |
+| `alarm_runtime_exceeded`         | A zone ran longer than `maximum_runtime_minutes`    | Inspect for stuck relay; clear fault. |
+| `alarm_no_flow`                  | gpm < `zone_N_minimum_flow_gpm` after `no_flow_grace_s` | Check pump/well/valve; retry or clear. |
+| `alarm_high_flow`                | gpm > `zone_N_maximum_flow_gpm` for `high_flow_grace_s` | Check for broken pipe; clear fault. |
 | `alarm_phantom_flow`             | gpm > `phantom_flow_gpm` while no zone on for 5+ min | Check valves; clear fault. |
 | `alarm_low_pressure`             | PSI < `pressure_running_min_psi` mid-run for 5s+    | Inspect supply; retry or clear. |
 | `alarm_high_pressure`            | PSI > `pressure_high_psi` for 10s+ during run       | Inspect; cancels run only when `high_pressure_cancels_run` is on. |
@@ -351,9 +352,9 @@ cleared via `button.nedorachio_clear_fault`.
    toggles.
 2. Set `zones_enabled_bitmask` to include bit 4. E.g. zones 1..5 enabled =
    `0b00011111 = 31`.
-3. Tune `zone_5_total_min`, `zone_5_cycle_min`, `zone_5_soak_min`,
-   `zone_5_min_interval_hours`, `zone_5_min_flow_gpm`, `zone_5_max_flow_gpm`,
-   `zone_5_max_runtime_min`.
+3. Tune `zone_5_total_minutes`, `zone_5_cycle_minutes`, `zone_5_soak_minutes`,
+   `zone_5_minimum_interval_hours`, `zone_5_minimum_flow_gpm`, `zone_5_maximum_flow_gpm`.
+   Runtime safety is controlled globally via `maximum_runtime_minutes`.
 
 ---
 

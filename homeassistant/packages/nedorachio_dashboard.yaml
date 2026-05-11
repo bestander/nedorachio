@@ -10,15 +10,6 @@ cards:
     title: Nedorachio controls
     state_color: true
     entities:
-      - entity: sensor.nedorachio_irrigation_controller_pressure
-        name: Pressure (PSI)
-      - entity: sensor.nedorachio_irrigation_controller_flow_rate_gpm
-        name: Flow rate (GPM)
-      - entity: sensor.nedorachio_irrigation_controller_flow_pulses_total
-        name: Flow pulses total
-      - entity: sensor.nedorachio_irrigation_controller_total_gallons
-        name: Total gallons
-      - type: divider
       - entity: switch.nedorachio_irrigation_controller_zone_1
         name: Left
         secondary_info: last-changed
@@ -32,28 +23,74 @@ cards:
         name: Drip
         secondary_info: last-changed
       - type: divider
-      - entity: switch.nedorachio_irrigation_controller_master_enable
-        name: Master enable
       - entity: switch.nedorachio_irrigation_controller_fallback_schedule_enabled
-        name: Fallback schedule
-      - entity: button.nedorachio_irrigation_controller_emergency_stop_all
-        name: Emergency stop
-      - entity: button.nedorachio_irrigation_controller_skip_next_run
-        name: Skip next run
-      - entity: button.nedorachio_irrigation_controller_clear_fault
-        name: Clear fault
-      - entity: button.nedorachio_irrigation_controller_run_full_cycle
-        name: Run full cycle now
+        name: Master schedule
 
   - type: entities
-    title: Nedorachio diagnostics
+    title: Nedorachio status
     entities:
+      - entity: sensor.nedorachio_irrigation_controller_pressure
+        name: Pressure (PSI)
+      - entity: sensor.nedorachio_irrigation_controller_flow_rate_gpm
+        name: Flow rate (GPM)
+      - entity: sensor.nedorachio_irrigation_controller_total_gallons
+        name: Total gallons
+      - entity: sensor.nedorachio_irrigation_controller_currently_running_zone
+        name: Running zone
+      - entity: sensor.nedorachio_irrigation_controller_current_phase
+        name: Current phase
+      - entity: sensor.nedorachio_irrigation_controller_run_progress
+        name: Run progress %
       - entity: sensor.nedorachio_irrigation_controller_last_run_outcome
         name: Last run outcome
       - entity: sensor.nedorachio_last_stop_reason
         name: Last stop reason
       - entity: sensor.nedorachio_last_stop_flow_pressure_fault
         name: Last stop was flow/pressure fault
+
+  - type: statistics-graph
+    title: Gallons over time (14d)
+    days_to_show: 14
+    stat_types:
+      - change
+    entities:
+      - sensor.nedorachio_irrigation_controller_total_gallons
+      - sensor.nedorachio_irrigation_controller_zone_1_gallons_total
+      - sensor.nedorachio_irrigation_controller_zone_2_gallons_total
+      - sensor.nedorachio_irrigation_controller_zone_3_gallons_total
+      - sensor.nedorachio_irrigation_controller_zone_4_gallons_total
+
+  - type: entities
+    title: Gallons target progress
+    entities:
+      - entity: sensor.nedorachio_irrigation_controller_zone_1_cycle_delivered_gallons
+        name: Zone 1 delivered this cycle
+      - entity: sensor.nedorachio_irrigation_controller_zone_1_cycle_remaining_gallons
+        name: Zone 1 remaining this cycle
+      - entity: sensor.nedorachio_irrigation_controller_zone_1_cycle_progress
+        name: Zone 1 cycle progress %
+      - entity: sensor.nedorachio_irrigation_controller_zone_2_cycle_delivered_gallons
+        name: Zone 2 delivered this cycle
+      - entity: sensor.nedorachio_irrigation_controller_zone_2_cycle_remaining_gallons
+        name: Zone 2 remaining this cycle
+      - entity: sensor.nedorachio_irrigation_controller_zone_2_cycle_progress
+        name: Zone 2 cycle progress %
+      - entity: sensor.nedorachio_irrigation_controller_zone_3_cycle_delivered_gallons
+        name: Zone 3 delivered this cycle
+      - entity: sensor.nedorachio_irrigation_controller_zone_3_cycle_remaining_gallons
+        name: Zone 3 remaining this cycle
+      - entity: sensor.nedorachio_irrigation_controller_zone_3_cycle_progress
+        name: Zone 3 cycle progress %
+      - entity: sensor.nedorachio_irrigation_controller_zone_4_cycle_delivered_gallons
+        name: Zone 4 delivered this cycle
+      - entity: sensor.nedorachio_irrigation_controller_zone_4_cycle_remaining_gallons
+        name: Zone 4 remaining this cycle
+      - entity: sensor.nedorachio_irrigation_controller_zone_4_cycle_progress
+        name: Zone 4 cycle progress %
+
+  - type: entities
+    title: Next watering
+    entities:
       - entity: sensor.nedorachio_zone_1_next_run
         name: Zone 1 next run
       - entity: sensor.nedorachio_zone_2_next_run

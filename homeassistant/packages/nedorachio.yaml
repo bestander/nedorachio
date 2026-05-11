@@ -66,6 +66,171 @@ automation:
             Pre-flight reason {{ preflight_reason }}.
             PSI {{ psi }}, flow {{ gpm }} gpm.
 
+  - id: nedorachio_apply_profile_on_start
+    alias: "Nedorachio: apply config profile on start"
+    trigger:
+      - platform: homeassistant
+        event: start
+    action:
+      - service: script.nedorachio_apply_config_profile
+
+  - id: nedorachio_apply_profile_on_reload_and_reconcile
+    alias: "Nedorachio: apply config profile on reload/reconcile"
+    trigger:
+      - platform: event
+        event_type: automation_reloaded
+      - platform: time_pattern
+        minutes: "/30"
+    action:
+      - service: script.nedorachio_apply_config_profile
+
+script:
+  nedorachio_apply_config_profile:
+    alias: "Nedorachio: apply config profile"
+    mode: single
+    sequence:
+      - variables:
+          cfg: "{{ state_attr('sensor.nedorachio_config_profile', 'profile') }}"
+      - if:
+          - condition: template
+            value_template: "{{ cfg is mapping and cfg.get('zones') is mapping and cfg.get('global') is mapping }}"
+        then:
+          - variables:
+              start_parts: "{{ (cfg.global.watering_window.start | default('00:00')).split(':') }}"
+              end_parts: "{{ (cfg.global.watering_window.end | default('08:00')).split(':') }}"
+              weekdays: "{{ cfg.global.blackout.weekdays | default([], true) }}"
+              blackout_mask: >-
+                {% set ns = namespace(mask=0) %}
+                {% set idx = {'mon':0,'tue':1,'wed':2,'thu':3,'fri':4,'sat':5,'sun':6} %}
+                {% for d in weekdays %}
+                  {% set i = idx.get((d|string)|lower) %}
+                  {% if i is not none %}
+                    {% set ns.mask = ns.mask + (2 ** i) %}
+                  {% endif %}
+                {% endfor %}
+                {{ ns.mask }}
+              zone_mask: >-
+                {% set ns = namespace(mask=0) %}
+                {% for zid in range(1, 9) %}
+                  {% set z = cfg.zones.get(zid|string, {}) %}
+                  {% if z.get('enabled', false) %}
+                    {% set ns.mask = ns.mask + (2 ** (zid - 1)) %}
+                  {% endif %}
+                {% endfor %}
+                {{ ns.mask }}
+          - service: number.set_value
+            target:
+              entity_id: number.nedorachio_irrigation_controller_schedule_start_hour
+            data:
+              value: "{{ start_parts[0] | int(0) }}"
+          - service: number.set_value
+            target:
+              entity_id: number.nedorachio_irrigation_controller_schedule_start_minute
+            data:
+              value: "{{ start_parts[1] | int(0) }}"
+          - service: number.set_value
+            target:
+              entity_id: number.nedorachio_irrigation_controller_schedule_end_hour
+            data:
+              value: "{{ end_parts[0] | int(8) }}"
+          - service: number.set_value
+            target:
+              entity_id: number.nedorachio_irrigation_controller_schedule_end_minute
+            data:
+              value: "{{ end_parts[1] | int(0) }}"
+          - service: number.set_value
+            target:
+              entity_id: number.nedorachio_irrigation_controller_attempt_cooldown_minutes
+            data:
+              value: "{{ cfg.global.attempt_cooldown_minutes | default(20) | float(20) }}"
+          - service: number.set_value
+            target:
+              entity_id: number.nedorachio_irrigation_controller_maximum_runtime_minutes
+            data:
+              value: "{{ cfg.global.maximum_runtime_minutes | default(60) | float(60) }}"
+          - service: number.set_value
+            target:
+              entity_id: number.nedorachio_irrigation_controller_blackout_weekday_bitmask
+            data:
+              value: "{{ blackout_mask | int(0) }}"
+          - service: number.set_value
+            target:
+              entity_id: number.nedorachio_irrigation_controller_zones_enabled_bitmask
+            data:
+              value: "{{ zone_mask | int(0) }}"
+          - repeat:
+              for_each: "{{ range(1, 9) | list }}"
+              sequence:
+                - variables:
+                    zid: "{{ repeat.item }}"
+                    z: "{{ cfg.zones.get((repeat.item|string), {}) }}"
+                    mode_value: "{{ 1 if (z.get('mode', 'gallons_target') == 'gallons_target') else 0 }}"
+                - service: number.set_value
+                  target:
+                    entity_id: "{{ 'number.nedorachio_irrigation_controller_zone_' ~ zid ~ '_schedule_mode' }}"
+                  data:
+                    value: "{{ mode_value | int(1) }}"
+                - service: number.set_value
+                  target:
+                    entity_id: "{{ 'number.nedorachio_irrigation_controller_zone_' ~ zid ~ '_goal_gallons_per_cycle' }}"
+                  data:
+                    value: "{{ z.get('goal_gallons_per_cycle', 100) | float(100) }}"
+                - service: number.set_value
+                  target:
+                    entity_id: "{{ 'number.nedorachio_irrigation_controller_zone_' ~ zid ~ '_cycle_gallons' }}"
+                  data:
+                    value: "{{ z.get('cycle_gallons', 50) | float(50) }}"
+                - service: number.set_value
+                  target:
+                    entity_id: "{{ 'number.nedorachio_irrigation_controller_zone_' ~ zid ~ '_soak_minutes' }}"
+                  data:
+                    value: "{{ z.get('soak_minutes', 15) | float(15) }}"
+                - service: number.set_value
+                  target:
+                    entity_id: "{{ 'number.nedorachio_irrigation_controller_zone_' ~ zid ~ '_minimum_interval_hours' }}"
+                  data:
+                    value: "{{ z.get('minimum_interval_hours', 72) | float(72) }}"
+                - service: number.set_value
+                  target:
+                    entity_id: "{{ 'number.nedorachio_irrigation_controller_zone_' ~ zid ~ '_start_minimum_psi' }}"
+                  data:
+                    value: "{{ z.get('start_minimum_psi', 35) | float(35) }}"
+                - service: number.set_value
+                  target:
+                    entity_id: "{{ 'number.nedorachio_irrigation_controller_zone_' ~ zid ~ '_start_maximum_psi' }}"
+                  data:
+                    value: "{{ z.get('start_maximum_psi', 85) | float(85) }}"
+                - service: number.set_value
+                  target:
+                    entity_id: "{{ 'number.nedorachio_irrigation_controller_zone_' ~ zid ~ '_minimum_running_psi' }}"
+                  data:
+                    value: "{{ z.get('minimum_running_psi', 20) | float(20) }}"
+                - service: number.set_value
+                  target:
+                    entity_id: "{{ 'number.nedorachio_irrigation_controller_zone_' ~ zid ~ '_minimum_running_psi_grace_seconds' }}"
+                  data:
+                    value: "{{ z.get('minimum_running_psi_grace_seconds', 600) | float(600) }}"
+                - service: number.set_value
+                  target:
+                    entity_id: "{{ 'number.nedorachio_irrigation_controller_zone_' ~ zid ~ '_minimum_flow_gpm' }}"
+                  data:
+                    value: "{{ z.get('minimum_flow_gpm', 0.2) | float(0.2) }}"
+                - service: number.set_value
+                  target:
+                    entity_id: "{{ 'number.nedorachio_irrigation_controller_zone_' ~ zid ~ '_maximum_flow_gpm' }}"
+                  data:
+                    value: "{{ z.get('maximum_flow_gpm', 12.0) | float(12.0) }}"
+                - service: number.set_value
+                  target:
+                    entity_id: "{{ 'number.nedorachio_irrigation_controller_zone_' ~ zid ~ '_total_minutes' }}"
+                  data:
+                    value: "{{ z.get('total_minutes', 20) | float(20) }}"
+                - service: number.set_value
+                  target:
+                    entity_id: "{{ 'number.nedorachio_irrigation_controller_zone_' ~ zid ~ '_cycle_minutes' }}"
+                  data:
+                    value: "{{ z.get('cycle_minutes', 10) | float(10) }}"
+
 template:
   - trigger:
       - platform: time_pattern
@@ -91,7 +256,7 @@ template:
         device_class: timestamp
         state: >-
           {% set last = states('sensor.nedorachio_irrigation_controller_zone_1_last_finished_epoch') | int(0) %}
-          {% set interval_h = states('number.nedorachio_irrigation_controller_zone_1_min_interval_hours') | float(0) %}
+          {% set interval_h = states('number.nedorachio_irrigation_controller_zone_1_minimum_interval_hours') | float(0) %}
           {% if last <= 0 or interval_h <= 0 %}
             {{ none }}
           {% else %}
@@ -101,7 +266,7 @@ template:
         device_class: timestamp
         state: >-
           {% set last = states('sensor.nedorachio_irrigation_controller_zone_2_last_finished_epoch') | int(0) %}
-          {% set interval_h = states('number.nedorachio_irrigation_controller_zone_2_min_interval_hours') | float(0) %}
+          {% set interval_h = states('number.nedorachio_irrigation_controller_zone_2_minimum_interval_hours') | float(0) %}
           {% if last <= 0 or interval_h <= 0 %}
             {{ none }}
           {% else %}
@@ -111,7 +276,7 @@ template:
         device_class: timestamp
         state: >-
           {% set last = states('sensor.nedorachio_irrigation_controller_zone_3_last_finished_epoch') | int(0) %}
-          {% set interval_h = states('number.nedorachio_irrigation_controller_zone_3_min_interval_hours') | float(0) %}
+          {% set interval_h = states('number.nedorachio_irrigation_controller_zone_3_minimum_interval_hours') | float(0) %}
           {% if last <= 0 or interval_h <= 0 %}
             {{ none }}
           {% else %}
@@ -121,7 +286,7 @@ template:
         device_class: timestamp
         state: >-
           {% set last = states('sensor.nedorachio_irrigation_controller_zone_4_last_finished_epoch') | int(0) %}
-          {% set interval_h = states('number.nedorachio_irrigation_controller_zone_4_min_interval_hours') | float(0) %}
+          {% set interval_h = states('number.nedorachio_irrigation_controller_zone_4_minimum_interval_hours') | float(0) %}
           {% if last <= 0 or interval_h <= 0 %}
             {{ none }}
           {% else %}
@@ -131,7 +296,7 @@ template:
         device_class: timestamp
         state: >-
           {% set last = states('sensor.nedorachio_irrigation_controller_zone_5_last_finished_epoch') | int(0) %}
-          {% set interval_h = states('number.nedorachio_irrigation_controller_zone_5_min_interval_hours') | float(0) %}
+          {% set interval_h = states('number.nedorachio_irrigation_controller_zone_5_minimum_interval_hours') | float(0) %}
           {% if last <= 0 or interval_h <= 0 %}
             {{ none }}
           {% else %}
@@ -141,7 +306,7 @@ template:
         device_class: timestamp
         state: >-
           {% set last = states('sensor.nedorachio_irrigation_controller_zone_6_last_finished_epoch') | int(0) %}
-          {% set interval_h = states('number.nedorachio_irrigation_controller_zone_6_min_interval_hours') | float(0) %}
+          {% set interval_h = states('number.nedorachio_irrigation_controller_zone_6_minimum_interval_hours') | float(0) %}
           {% if last <= 0 or interval_h <= 0 %}
             {{ none }}
           {% else %}
@@ -151,7 +316,7 @@ template:
         device_class: timestamp
         state: >-
           {% set last = states('sensor.nedorachio_irrigation_controller_zone_7_last_finished_epoch') | int(0) %}
-          {% set interval_h = states('number.nedorachio_irrigation_controller_zone_7_min_interval_hours') | float(0) %}
+          {% set interval_h = states('number.nedorachio_irrigation_controller_zone_7_minimum_interval_hours') | float(0) %}
           {% if last <= 0 or interval_h <= 0 %}
             {{ none }}
           {% else %}
@@ -161,7 +326,7 @@ template:
         device_class: timestamp
         state: >-
           {% set last = states('sensor.nedorachio_irrigation_controller_zone_8_last_finished_epoch') | int(0) %}
-          {% set interval_h = states('number.nedorachio_irrigation_controller_zone_8_min_interval_hours') | float(0) %}
+          {% set interval_h = states('number.nedorachio_irrigation_controller_zone_8_minimum_interval_hours') | float(0) %}
           {% if last <= 0 or interval_h <= 0 %}
             {{ none }}
           {% else %}

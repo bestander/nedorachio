@@ -576,6 +576,316 @@ sensor:
     accuracy_decimals: 0
     lambda: 'return (float)id(zone_8_last_run_at);'
 
+  # Gallons-target progress readouts.
+  - platform: template
+    name: "Zone 1 cycle delivered gallons"
+    id: zone_1_cycle_delivered_gallons_sensor
+    update_interval: 10s
+    accuracy_decimals: 1
+    unit_of_measurement: "gal"
+    lambda: 'return id(zone_1_cycle_delivered_gallons);'
+  - platform: template
+    name: "Zone 2 cycle delivered gallons"
+    id: zone_2_cycle_delivered_gallons_sensor
+    update_interval: 10s
+    accuracy_decimals: 1
+    unit_of_measurement: "gal"
+    lambda: 'return id(zone_2_cycle_delivered_gallons);'
+  - platform: template
+    name: "Zone 3 cycle delivered gallons"
+    id: zone_3_cycle_delivered_gallons_sensor
+    update_interval: 10s
+    accuracy_decimals: 1
+    unit_of_measurement: "gal"
+    lambda: 'return id(zone_3_cycle_delivered_gallons);'
+  - platform: template
+    name: "Zone 4 cycle delivered gallons"
+    id: zone_4_cycle_delivered_gallons_sensor
+    update_interval: 10s
+    accuracy_decimals: 1
+    unit_of_measurement: "gal"
+    lambda: 'return id(zone_4_cycle_delivered_gallons);'
+  - platform: template
+    name: "Zone 5 cycle delivered gallons"
+    id: zone_5_cycle_delivered_gallons_sensor
+    update_interval: 10s
+    accuracy_decimals: 1
+    unit_of_measurement: "gal"
+    lambda: 'return id(zone_5_cycle_delivered_gallons);'
+  - platform: template
+    name: "Zone 6 cycle delivered gallons"
+    id: zone_6_cycle_delivered_gallons_sensor
+    update_interval: 10s
+    accuracy_decimals: 1
+    unit_of_measurement: "gal"
+    lambda: 'return id(zone_6_cycle_delivered_gallons);'
+  - platform: template
+    name: "Zone 7 cycle delivered gallons"
+    id: zone_7_cycle_delivered_gallons_sensor
+    update_interval: 10s
+    accuracy_decimals: 1
+    unit_of_measurement: "gal"
+    lambda: 'return id(zone_7_cycle_delivered_gallons);'
+  - platform: template
+    name: "Zone 8 cycle delivered gallons"
+    id: zone_8_cycle_delivered_gallons_sensor
+    update_interval: 10s
+    accuracy_decimals: 1
+    unit_of_measurement: "gal"
+    lambda: 'return id(zone_8_cycle_delivered_gallons);'
+
+  - platform: template
+    name: "Zone 1 cycle goal gallons"
+    id: zone_1_cycle_goal_gallons_sensor
+    update_interval: 10s
+    accuracy_decimals: 1
+    unit_of_measurement: "gal"
+    lambda: 'return id(zone_1_goal_gallons_per_cycle).state;'
+  - platform: template
+    name: "Zone 2 cycle goal gallons"
+    id: zone_2_cycle_goal_gallons_sensor
+    update_interval: 10s
+    accuracy_decimals: 1
+    unit_of_measurement: "gal"
+    lambda: 'return id(zone_2_goal_gallons_per_cycle).state;'
+  - platform: template
+    name: "Zone 3 cycle goal gallons"
+    id: zone_3_cycle_goal_gallons_sensor
+    update_interval: 10s
+    accuracy_decimals: 1
+    unit_of_measurement: "gal"
+    lambda: 'return id(zone_3_goal_gallons_per_cycle).state;'
+  - platform: template
+    name: "Zone 4 cycle goal gallons"
+    id: zone_4_cycle_goal_gallons_sensor
+    update_interval: 10s
+    accuracy_decimals: 1
+    unit_of_measurement: "gal"
+    lambda: 'return id(zone_4_goal_gallons_per_cycle).state;'
+  - platform: template
+    name: "Zone 5 cycle goal gallons"
+    id: zone_5_cycle_goal_gallons_sensor
+    update_interval: 10s
+    accuracy_decimals: 1
+    unit_of_measurement: "gal"
+    lambda: 'return id(zone_5_goal_gallons_per_cycle).state;'
+  - platform: template
+    name: "Zone 6 cycle goal gallons"
+    id: zone_6_cycle_goal_gallons_sensor
+    update_interval: 10s
+    accuracy_decimals: 1
+    unit_of_measurement: "gal"
+    lambda: 'return id(zone_6_goal_gallons_per_cycle).state;'
+  - platform: template
+    name: "Zone 7 cycle goal gallons"
+    id: zone_7_cycle_goal_gallons_sensor
+    update_interval: 10s
+    accuracy_decimals: 1
+    unit_of_measurement: "gal"
+    lambda: 'return id(zone_7_goal_gallons_per_cycle).state;'
+  - platform: template
+    name: "Zone 8 cycle goal gallons"
+    id: zone_8_cycle_goal_gallons_sensor
+    update_interval: 10s
+    accuracy_decimals: 1
+    unit_of_measurement: "gal"
+    lambda: 'return id(zone_8_goal_gallons_per_cycle).state;'
+
+  - platform: template
+    name: "Zone 1 cycle remaining gallons"
+    id: zone_1_cycle_remaining_gallons_sensor
+    update_interval: 10s
+    accuracy_decimals: 1
+    unit_of_measurement: "gal"
+    lambda: |-
+      float r = id(zone_1_goal_gallons_per_cycle).state - id(zone_1_cycle_delivered_gallons);
+      return r > 0.0f ? r : 0.0f;
+  - platform: template
+    name: "Zone 2 cycle remaining gallons"
+    id: zone_2_cycle_remaining_gallons_sensor
+    update_interval: 10s
+    accuracy_decimals: 1
+    unit_of_measurement: "gal"
+    lambda: |-
+      float r = id(zone_2_goal_gallons_per_cycle).state - id(zone_2_cycle_delivered_gallons);
+      return r > 0.0f ? r : 0.0f;
+  - platform: template
+    name: "Zone 3 cycle remaining gallons"
+    id: zone_3_cycle_remaining_gallons_sensor
+    update_interval: 10s
+    accuracy_decimals: 1
+    unit_of_measurement: "gal"
+    lambda: |-
+      float r = id(zone_3_goal_gallons_per_cycle).state - id(zone_3_cycle_delivered_gallons);
+      return r > 0.0f ? r : 0.0f;
+  - platform: template
+    name: "Zone 4 cycle remaining gallons"
+    id: zone_4_cycle_remaining_gallons_sensor
+    update_interval: 10s
+    accuracy_decimals: 1
+    unit_of_measurement: "gal"
+    lambda: |-
+      float r = id(zone_4_goal_gallons_per_cycle).state - id(zone_4_cycle_delivered_gallons);
+      return r > 0.0f ? r : 0.0f;
+  - platform: template
+    name: "Zone 5 cycle remaining gallons"
+    id: zone_5_cycle_remaining_gallons_sensor
+    update_interval: 10s
+    accuracy_decimals: 1
+    unit_of_measurement: "gal"
+    lambda: |-
+      float r = id(zone_5_goal_gallons_per_cycle).state - id(zone_5_cycle_delivered_gallons);
+      return r > 0.0f ? r : 0.0f;
+  - platform: template
+    name: "Zone 6 cycle remaining gallons"
+    id: zone_6_cycle_remaining_gallons_sensor
+    update_interval: 10s
+    accuracy_decimals: 1
+    unit_of_measurement: "gal"
+    lambda: |-
+      float r = id(zone_6_goal_gallons_per_cycle).state - id(zone_6_cycle_delivered_gallons);
+      return r > 0.0f ? r : 0.0f;
+  - platform: template
+    name: "Zone 7 cycle remaining gallons"
+    id: zone_7_cycle_remaining_gallons_sensor
+    update_interval: 10s
+    accuracy_decimals: 1
+    unit_of_measurement: "gal"
+    lambda: |-
+      float r = id(zone_7_goal_gallons_per_cycle).state - id(zone_7_cycle_delivered_gallons);
+      return r > 0.0f ? r : 0.0f;
+  - platform: template
+    name: "Zone 8 cycle remaining gallons"
+    id: zone_8_cycle_remaining_gallons_sensor
+    update_interval: 10s
+    accuracy_decimals: 1
+    unit_of_measurement: "gal"
+    lambda: |-
+      float r = id(zone_8_goal_gallons_per_cycle).state - id(zone_8_cycle_delivered_gallons);
+      return r > 0.0f ? r : 0.0f;
+
+  - platform: template
+    name: "Zone 1 cycle progress %"
+    id: zone_1_cycle_progress_pct_sensor
+    update_interval: 10s
+    accuracy_decimals: 0
+    unit_of_measurement: "%"
+    lambda: |-
+      float g = id(zone_1_goal_gallons_per_cycle).state;
+      return g > 0.0f ? (id(zone_1_cycle_delivered_gallons) / g) * 100.0f : 0.0f;
+  - platform: template
+    name: "Zone 2 cycle progress %"
+    id: zone_2_cycle_progress_pct_sensor
+    update_interval: 10s
+    accuracy_decimals: 0
+    unit_of_measurement: "%"
+    lambda: |-
+      float g = id(zone_2_goal_gallons_per_cycle).state;
+      return g > 0.0f ? (id(zone_2_cycle_delivered_gallons) / g) * 100.0f : 0.0f;
+  - platform: template
+    name: "Zone 3 cycle progress %"
+    id: zone_3_cycle_progress_pct_sensor
+    update_interval: 10s
+    accuracy_decimals: 0
+    unit_of_measurement: "%"
+    lambda: |-
+      float g = id(zone_3_goal_gallons_per_cycle).state;
+      return g > 0.0f ? (id(zone_3_cycle_delivered_gallons) / g) * 100.0f : 0.0f;
+  - platform: template
+    name: "Zone 4 cycle progress %"
+    id: zone_4_cycle_progress_pct_sensor
+    update_interval: 10s
+    accuracy_decimals: 0
+    unit_of_measurement: "%"
+    lambda: |-
+      float g = id(zone_4_goal_gallons_per_cycle).state;
+      return g > 0.0f ? (id(zone_4_cycle_delivered_gallons) / g) * 100.0f : 0.0f;
+  - platform: template
+    name: "Zone 5 cycle progress %"
+    id: zone_5_cycle_progress_pct_sensor
+    update_interval: 10s
+    accuracy_decimals: 0
+    unit_of_measurement: "%"
+    lambda: |-
+      float g = id(zone_5_goal_gallons_per_cycle).state;
+      return g > 0.0f ? (id(zone_5_cycle_delivered_gallons) / g) * 100.0f : 0.0f;
+  - platform: template
+    name: "Zone 6 cycle progress %"
+    id: zone_6_cycle_progress_pct_sensor
+    update_interval: 10s
+    accuracy_decimals: 0
+    unit_of_measurement: "%"
+    lambda: |-
+      float g = id(zone_6_goal_gallons_per_cycle).state;
+      return g > 0.0f ? (id(zone_6_cycle_delivered_gallons) / g) * 100.0f : 0.0f;
+  - platform: template
+    name: "Zone 7 cycle progress %"
+    id: zone_7_cycle_progress_pct_sensor
+    update_interval: 10s
+    accuracy_decimals: 0
+    unit_of_measurement: "%"
+    lambda: |-
+      float g = id(zone_7_goal_gallons_per_cycle).state;
+      return g > 0.0f ? (id(zone_7_cycle_delivered_gallons) / g) * 100.0f : 0.0f;
+  - platform: template
+    name: "Zone 8 cycle progress %"
+    id: zone_8_cycle_progress_pct_sensor
+    update_interval: 10s
+    accuracy_decimals: 0
+    unit_of_measurement: "%"
+    lambda: |-
+      float g = id(zone_8_goal_gallons_per_cycle).state;
+      return g > 0.0f ? (id(zone_8_cycle_delivered_gallons) / g) * 100.0f : 0.0f;
+
+  - platform: template
+    name: "Zone 1 schedule mode"
+    id: zone_1_schedule_mode_sensor
+    update_interval: 60s
+    accuracy_decimals: 0
+    lambda: 'return id(zone_1_schedule_mode).state;'
+  - platform: template
+    name: "Zone 2 schedule mode"
+    id: zone_2_schedule_mode_sensor
+    update_interval: 60s
+    accuracy_decimals: 0
+    lambda: 'return id(zone_2_schedule_mode).state;'
+  - platform: template
+    name: "Zone 3 schedule mode"
+    id: zone_3_schedule_mode_sensor
+    update_interval: 60s
+    accuracy_decimals: 0
+    lambda: 'return id(zone_3_schedule_mode).state;'
+  - platform: template
+    name: "Zone 4 schedule mode"
+    id: zone_4_schedule_mode_sensor
+    update_interval: 60s
+    accuracy_decimals: 0
+    lambda: 'return id(zone_4_schedule_mode).state;'
+  - platform: template
+    name: "Zone 5 schedule mode"
+    id: zone_5_schedule_mode_sensor
+    update_interval: 60s
+    accuracy_decimals: 0
+    lambda: 'return id(zone_5_schedule_mode).state;'
+  - platform: template
+    name: "Zone 6 schedule mode"
+    id: zone_6_schedule_mode_sensor
+    update_interval: 60s
+    accuracy_decimals: 0
+    lambda: 'return id(zone_6_schedule_mode).state;'
+  - platform: template
+    name: "Zone 7 schedule mode"
+    id: zone_7_schedule_mode_sensor
+    update_interval: 60s
+    accuracy_decimals: 0
+    lambda: 'return id(zone_7_schedule_mode).state;'
+  - platform: template
+    name: "Zone 8 schedule mode"
+    id: zone_8_schedule_mode_sensor
+    update_interval: 60s
+    accuracy_decimals: 0
+    lambda: 'return id(zone_8_schedule_mode).state;'
+
   # --- Aggregates ---
   - platform: template
     name: "Total gallons"

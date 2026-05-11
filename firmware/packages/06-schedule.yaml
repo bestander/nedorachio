@@ -44,12 +44,17 @@ globals:
     type: int
     restore_value: false
     initial_value: '0'
+  - id: last_non_completed_attempt_epoch
+    type: uint32_t
+    restore_value: true
+    initial_value: '0'
 
 button:
   - platform: template
     name: "Skip next run"
     id: skip_next_run
     icon: mdi:skip-next-circle
+    internal: true
     on_press:
       - lambda: |-
           id(skip_next_run_pending) = true;
@@ -69,6 +74,11 @@ interval:
 
           uint32_t now_epoch = (uint32_t)id(effective_now_epoch).state;
           if (now_epoch == 0) return;
+          uint32_t cooldown_s = (uint32_t)(id(attempt_cooldown_minutes).state * 60.0f);
+          if (cooldown_s > 0 && id(last_non_completed_attempt_epoch) > 0 &&
+              now_epoch < id(last_non_completed_attempt_epoch) + cooldown_s) {
+            return;
+          }
 
           // Compute wall-clock hour/minute from HA time when valid, else
           // fallback EST (matches the offline clock in 01-core).
@@ -93,6 +103,20 @@ interval:
               ? (now_min >= start_min && now_min < end_min)
               : (now_min >= start_min || now_min < end_min);
           if (!in_window) return;
+          int dow_mon0 = 0;  // 0=Mon..6=Sun
+          if (ha_now.is_valid()) {
+            // ESPHome: day_of_week is 1=Sunday ... 7=Saturday.
+            int dow_sun1 = ha_now.day_of_week;
+            dow_mon0 = (dow_sun1 + 5) % 7;
+          } else {
+            time_t est_epoch = (time_t)now_epoch - 5 * 3600;
+            struct tm now_est_tm;
+            gmtime_r(&est_epoch, &now_est_tm);
+            // tm_wday: 0=Sunday ... 6=Saturday.
+            dow_mon0 = (now_est_tm.tm_wday + 6) % 7;
+          }
+          int blackout_mask = (int)id(blackout_weekday_bitmask).state;
+          if (((blackout_mask >> dow_mon0) & 0x1) != 0) return;
 
           int mask = (int)id(zones_enabled_bitmask).state;
           int picked = 0;
@@ -185,6 +209,9 @@ script:
           not:
             script.is_running: run_one_zone_with_retry
       - lambda: |-
+          if (id(run_cancel_requested) && id(time_synced).state) {
+            id(last_non_completed_attempt_epoch) = (uint32_t)id(effective_now_epoch).state;
+          }
           id(current_phase_str) = id(any_alarm_latched) ? "fault" : "idle";
           id(phase_total_ms) = 0;
           if (id(time_synced).state) {
@@ -245,7 +272,10 @@ sensor:
     accuracy_decimals: 0
     unit_of_measurement: "%"
     lambda: |-
-      if (id(run_total_min) == 0) return 0.0f;
+      if (id(run_goal_gallons) > 0.0f) {
+        return (id(run_gallons_done) / id(run_goal_gallons)) * 100.0f;
+      }
+      if (id(run_total_min) == 0.0f) return 0.0f;
       return (id(run_minutes_done) / id(run_total_min)) * 100.0f;
 
   # Next-due zone (1..8), or 0 if nothing eligible right now ignoring window.
