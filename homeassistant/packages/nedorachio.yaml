@@ -72,7 +72,9 @@ automation:
       - platform: homeassistant
         event: start
     action:
-      - service: script.nedorachio_apply_config_profile
+      - service: script.turn_on
+        target:
+          entity_id: script.nedorachio_apply_config_profile
 
   - id: nedorachio_apply_profile_on_reload_and_reconcile
     alias: "Nedorachio: apply config profile on reload/reconcile"
@@ -82,7 +84,9 @@ automation:
       - platform: time_pattern
         minutes: "/30"
     action:
-      - service: script.nedorachio_apply_config_profile
+      - service: script.turn_on
+        target:
+          entity_id: script.nedorachio_apply_config_profile
 
 script:
   nedorachio_apply_config_profile:
@@ -90,7 +94,7 @@ script:
     mode: single
     sequence:
       - variables:
-          cfg: "{{ state_attr('sensor.nedorachio_config_profile', 'profile') }}"
+          cfg: "{{ (state_attr('sensor.nedorachio_config_profile', 'profile') | default('{}', true)) | from_json }}"
       - if:
           - condition: template
             value_template: "{{ cfg is mapping and cfg.get('zones') is mapping and cfg.get('global') is mapping }}"
