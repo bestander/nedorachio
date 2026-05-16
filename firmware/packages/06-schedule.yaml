@@ -49,6 +49,40 @@ globals:
     restore_value: true
     initial_value: '0'
 
+  # Computed plan: next scheduled start epoch per zone (serial queue, see interval below).
+  - id: zone_1_scheduled_next_epoch
+    type: uint32_t
+    restore_value: false
+    initial_value: '0'
+  - id: zone_2_scheduled_next_epoch
+    type: uint32_t
+    restore_value: false
+    initial_value: '0'
+  - id: zone_3_scheduled_next_epoch
+    type: uint32_t
+    restore_value: false
+    initial_value: '0'
+  - id: zone_4_scheduled_next_epoch
+    type: uint32_t
+    restore_value: false
+    initial_value: '0'
+  - id: zone_5_scheduled_next_epoch
+    type: uint32_t
+    restore_value: false
+    initial_value: '0'
+  - id: zone_6_scheduled_next_epoch
+    type: uint32_t
+    restore_value: false
+    initial_value: '0'
+  - id: zone_7_scheduled_next_epoch
+    type: uint32_t
+    restore_value: false
+    initial_value: '0'
+  - id: zone_8_scheduled_next_epoch
+    type: uint32_t
+    restore_value: false
+    initial_value: '0'
+
 button:
   - platform: template
     name: "Skip next run"
@@ -60,8 +94,186 @@ button:
           id(skip_next_run_pending) = true;
           ESP_LOGI("schedule", "Next due zone will be skipped.");
 
-# Cadence evaluator. Runs every 60s; cheap when nothing is due.
+# Plan next scheduled starts for HA: cadence + watering window + blackout, then
+# serialize zones using maximum_runtime_minutes per zone (single-zone invariant).
 interval:
+  - interval: 30s
+    then:
+      - lambda: |-
+          id(zone_1_scheduled_next_epoch) = 0;
+          id(zone_2_scheduled_next_epoch) = 0;
+          id(zone_3_scheduled_next_epoch) = 0;
+          id(zone_4_scheduled_next_epoch) = 0;
+          id(zone_5_scheduled_next_epoch) = 0;
+          id(zone_6_scheduled_next_epoch) = 0;
+          id(zone_7_scheduled_next_epoch) = 0;
+          id(zone_8_scheduled_next_epoch) = 0;
+          if (!id(fallback_schedule_enabled).state)
+            return;
+
+          uint32_t now_epoch = (uint32_t) id(effective_now_epoch).state;
+          if (now_epoch == 0)
+            return;
+
+          int start_min_cfg =
+              (int) id(schedule_start_hour).state * 60 + (int) id(schedule_start_minute).state;
+          int end_min_cfg =
+              (int) id(schedule_end_hour).state * 60 + (int) id(schedule_end_minute).state;
+          if (start_min_cfg == end_min_cfg)
+            return;
+
+          auto snap_next = [&](uint32_t earliest) -> uint32_t {
+            uint32_t t = (earliest / 60u) * 60u;
+            if (t < earliest)
+              t += 60;
+            for (int iter = 0; iter < 20160; iter++) {
+              int hour = 0;
+              int minute = 0;
+              int dow_mon0 = 0;
+              if (id(ha_time).now().is_valid()) {
+                time_t tt = (time_t) t;
+                struct tm lt {};
+                localtime_r(&tt, &lt);
+                hour = lt.tm_hour;
+                minute = lt.tm_min;
+                dow_mon0 = (lt.tm_wday + 6) % 7;
+              } else {
+                time_t est_epoch = (time_t) t - 5 * 3600;
+                struct tm tm_est {};
+                gmtime_r(&est_epoch, &tm_est);
+                hour = tm_est.tm_hour;
+                minute = tm_est.tm_min;
+                dow_mon0 = (tm_est.tm_wday + 6) % 7;
+              }
+              int now_min = hour * 60 + minute;
+              bool in_window;
+              if (start_min_cfg < end_min_cfg) {
+                in_window = (now_min >= start_min_cfg && now_min < end_min_cfg);
+              } else {
+                in_window = (now_min >= start_min_cfg || now_min < end_min_cfg);
+              }
+              int bmask = (int) id(blackout_weekday_bitmask).state;
+              bool blackout = ((bmask >> dow_mon0) & 1) != 0;
+              if (in_window && !blackout)
+                return t;
+              t += 60;
+            }
+            return 0;
+          };
+
+          uint32_t ideals[8];
+          int zids[8];
+          int n = 0;
+
+          int mask = (int) id(zones_enabled_bitmask).state;
+          for (int zid = 1; zid <= 8; zid++) {
+            if (((mask >> (zid - 1)) & 1) == 0)
+              continue;
+
+            uint32_t last_finished = 0;
+            float interval_h = 0;
+            switch (zid) {
+              case 1:
+                last_finished = id(zone_1_last_finished_epoch);
+                interval_h = id(zone_1_min_interval_hours).state;
+                break;
+              case 2:
+                last_finished = id(zone_2_last_finished_epoch);
+                interval_h = id(zone_2_min_interval_hours).state;
+                break;
+              case 3:
+                last_finished = id(zone_3_last_finished_epoch);
+                interval_h = id(zone_3_min_interval_hours).state;
+                break;
+              case 4:
+                last_finished = id(zone_4_last_finished_epoch);
+                interval_h = id(zone_4_min_interval_hours).state;
+                break;
+              case 5:
+                last_finished = id(zone_5_last_finished_epoch);
+                interval_h = id(zone_5_min_interval_hours).state;
+                break;
+              case 6:
+                last_finished = id(zone_6_last_finished_epoch);
+                interval_h = id(zone_6_min_interval_hours).state;
+                break;
+              case 7:
+                last_finished = id(zone_7_last_finished_epoch);
+                interval_h = id(zone_7_min_interval_hours).state;
+                break;
+              case 8:
+                last_finished = id(zone_8_last_finished_epoch);
+                interval_h = id(zone_8_min_interval_hours).state;
+                break;
+            }
+
+            if (interval_h <= 0.0f)
+              continue;
+
+            uint32_t interval_s = (uint32_t) (interval_h * 3600.0f);
+            if (last_finished == 0)
+              last_finished = id(fallback_start_epoch_est);
+
+            uint64_t raw_due_64 = (uint64_t) last_finished + interval_s;
+            uint32_t raw_due =
+                raw_due_64 > 0xFFFFFFFFu ? 0xFFFFFFFFu : (uint32_t) raw_due_64;
+            uint32_t ideal = snap_next(raw_due);
+            if (ideal == 0)
+              continue;
+
+            ideals[n] = ideal;
+            zids[n] = zid;
+            n++;
+          }
+
+          for (int i = 0; i < n - 1; i++) {
+            int best = i;
+            for (int j = i + 1; j < n; j++) {
+              if (ideals[j] < ideals[best] ||
+                  (ideals[j] == ideals[best] && zids[j] < zids[best]))
+                best = j;
+            }
+            if (best != i) {
+              uint32_t ti = ideals[i];
+              ideals[i] = ideals[best];
+              ideals[best] = ti;
+              int tz = zids[i];
+              zids[i] = zids[best];
+              zids[best] = tz;
+            }
+          }
+
+          uint32_t cursor = now_epoch;
+          uint32_t dur_s = (uint32_t) (id(maximum_runtime_minutes).state * 60.0f);
+          if (dur_s < 60)
+            dur_s = 60;
+
+          uint32_t assigned[9];
+          for (int z = 1; z <= 8; z++)
+            assigned[z] = 0;
+
+          for (int i = 0; i < n; i++) {
+            uint32_t ideal = ideals[i];
+            int z = zids[i];
+            uint32_t merged = ideal > cursor ? ideal : cursor;
+            uint32_t actual = snap_next(merged);
+            if (actual == 0)
+              continue;
+            assigned[z] = actual;
+            uint64_t nc = (uint64_t) actual + dur_s;
+            cursor = nc > 0xFFFFFFFFu ? 0xFFFFFFFFu : (uint32_t) nc;
+          }
+
+          id(zone_1_scheduled_next_epoch) = assigned[1];
+          id(zone_2_scheduled_next_epoch) = assigned[2];
+          id(zone_3_scheduled_next_epoch) = assigned[3];
+          id(zone_4_scheduled_next_epoch) = assigned[4];
+          id(zone_5_scheduled_next_epoch) = assigned[5];
+          id(zone_6_scheduled_next_epoch) = assigned[6];
+          id(zone_7_scheduled_next_epoch) = assigned[7];
+          id(zone_8_scheduled_next_epoch) = assigned[8];
+
+  # Cadence evaluator: runs every 60s; cheap when nothing is due.
   - interval: 60s
     then:
       - lambda: |-
@@ -375,3 +587,70 @@ sensor:
     update_interval: 60s
     accuracy_decimals: 0
     lambda: 'return (float)id(zone_8_last_finished_epoch);'
+
+  # Device-authoritative planned start (Unix epoch seconds); includes blackout,
+  # window, and serial spacing via maximum_runtime_minutes between zones.
+  - platform: template
+    name: "Zone 1 scheduled next start epoch"
+    id: zone_1_scheduled_next_start_epoch_sensor
+    update_interval: 30s
+    accuracy_decimals: 0
+    lambda: |-
+      if (id(zone_1_scheduled_next_epoch) == 0) return {};
+      return (float) id(zone_1_scheduled_next_epoch);
+  - platform: template
+    name: "Zone 2 scheduled next start epoch"
+    id: zone_2_scheduled_next_start_epoch_sensor
+    update_interval: 30s
+    accuracy_decimals: 0
+    lambda: |-
+      if (id(zone_2_scheduled_next_epoch) == 0) return {};
+      return (float) id(zone_2_scheduled_next_epoch);
+  - platform: template
+    name: "Zone 3 scheduled next start epoch"
+    id: zone_3_scheduled_next_start_epoch_sensor
+    update_interval: 30s
+    accuracy_decimals: 0
+    lambda: |-
+      if (id(zone_3_scheduled_next_epoch) == 0) return {};
+      return (float) id(zone_3_scheduled_next_epoch);
+  - platform: template
+    name: "Zone 4 scheduled next start epoch"
+    id: zone_4_scheduled_next_start_epoch_sensor
+    update_interval: 30s
+    accuracy_decimals: 0
+    lambda: |-
+      if (id(zone_4_scheduled_next_epoch) == 0) return {};
+      return (float) id(zone_4_scheduled_next_epoch);
+  - platform: template
+    name: "Zone 5 scheduled next start epoch"
+    id: zone_5_scheduled_next_start_epoch_sensor
+    update_interval: 30s
+    accuracy_decimals: 0
+    lambda: |-
+      if (id(zone_5_scheduled_next_epoch) == 0) return {};
+      return (float) id(zone_5_scheduled_next_epoch);
+  - platform: template
+    name: "Zone 6 scheduled next start epoch"
+    id: zone_6_scheduled_next_start_epoch_sensor
+    update_interval: 30s
+    accuracy_decimals: 0
+    lambda: |-
+      if (id(zone_6_scheduled_next_epoch) == 0) return {};
+      return (float) id(zone_6_scheduled_next_epoch);
+  - platform: template
+    name: "Zone 7 scheduled next start epoch"
+    id: zone_7_scheduled_next_start_epoch_sensor
+    update_interval: 30s
+    accuracy_decimals: 0
+    lambda: |-
+      if (id(zone_7_scheduled_next_epoch) == 0) return {};
+      return (float) id(zone_7_scheduled_next_epoch);
+  - platform: template
+    name: "Zone 8 scheduled next start epoch"
+    id: zone_8_scheduled_next_start_epoch_sensor
+    update_interval: 30s
+    accuracy_decimals: 0
+    lambda: |-
+      if (id(zone_8_scheduled_next_epoch) == 0) return {};
+      return (float) id(zone_8_scheduled_next_epoch);

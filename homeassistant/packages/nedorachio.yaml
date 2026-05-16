@@ -246,10 +246,7 @@ script:
                     value: "{{ z.get('cycle_minutes', 10) | float(10) }}"
 
 template:
-  - trigger:
-      - platform: time_pattern
-        minutes: "/1"
-    sensor:
+  - sensor:
       - name: "Nedorachio last stop reason"
         state: >-
           {% set outcome = states('sensor.nedorachio_irrigation_controller_last_run_outcome') %}
@@ -266,277 +263,78 @@ template:
           {% else %}
             no
           {% endif %}
+      # Next-run timestamps come from the controller (window + blackout + serial queue).
       - name: "Nedorachio zone 1 next run"
         device_class: timestamp
         state: >-
-          {% set last = states('sensor.nedorachio_irrigation_controller_zone_1_last_finished_epoch') | int(0) %}
-          {% set interval_h = states('number.nedorachio_irrigation_controller_zone_1_minimum_interval_hours') | float(0) %}
-          {% set start_h = states('number.nedorachio_irrigation_controller_schedule_start_hour') | int(0) %}
-          {% set start_m = states('number.nedorachio_irrigation_controller_schedule_start_minute') | int(0) %}
-          {% set end_h = states('number.nedorachio_irrigation_controller_schedule_end_hour') | int(8) %}
-          {% set end_m = states('number.nedorachio_irrigation_controller_schedule_end_minute') | int(0) %}
-          {% set start_min = (start_h * 60) + start_m %}
-          {% set end_min = (end_h * 60) + end_m %}
-          {% if last <= 0 or interval_h <= 0 or start_min == end_min %}
+          {% set e = states('sensor.nedorachio_irrigation_controller_zone_1_scheduled_next_start_epoch') %}
+          {% if e in ['unknown', 'unavailable', 'none', None] or e | float(default=-1) <= 0 %}
             {{ none }}
           {% else %}
-            {% set due_ts = last + ((interval_h * 3600) | int(0)) %}
-            {% set due_local = as_local(as_datetime(due_ts)) %}
-            {% set due_min = (due_local.hour * 60) + due_local.minute %}
-            {% set start_today_ts = as_timestamp(due_local.replace(hour=start_h, minute=start_m, second=0, microsecond=0)) | int(0) %}
-            {% if start_min < end_min %}
-              {% if due_min >= start_min and due_min < end_min %}
-                {{ due_ts | timestamp_local }}
-              {% elif due_min < start_min %}
-                {{ start_today_ts | timestamp_local }}
-              {% else %}
-                {{ (start_today_ts + 86400) | timestamp_local }}
-              {% endif %}
-            {% else %}
-              {% if due_min >= start_min or due_min < end_min %}
-                {{ due_ts | timestamp_local }}
-              {% else %}
-                {{ start_today_ts | timestamp_local }}
-              {% endif %}
-            {% endif %}
+            {{ as_datetime(e | int) }}
           {% endif %}
       - name: "Nedorachio zone 2 next run"
         device_class: timestamp
         state: >-
-          {% set last = states('sensor.nedorachio_irrigation_controller_zone_2_last_finished_epoch') | int(0) %}
-          {% set interval_h = states('number.nedorachio_irrigation_controller_zone_2_minimum_interval_hours') | float(0) %}
-          {% set start_h = states('number.nedorachio_irrigation_controller_schedule_start_hour') | int(0) %}
-          {% set start_m = states('number.nedorachio_irrigation_controller_schedule_start_minute') | int(0) %}
-          {% set end_h = states('number.nedorachio_irrigation_controller_schedule_end_hour') | int(8) %}
-          {% set end_m = states('number.nedorachio_irrigation_controller_schedule_end_minute') | int(0) %}
-          {% set start_min = (start_h * 60) + start_m %}
-          {% set end_min = (end_h * 60) + end_m %}
-          {% if last <= 0 or interval_h <= 0 or start_min == end_min %}
+          {% set e = states('sensor.nedorachio_irrigation_controller_zone_2_scheduled_next_start_epoch') %}
+          {% if e in ['unknown', 'unavailable', 'none', None] or e | float(default=-1) <= 0 %}
             {{ none }}
           {% else %}
-            {% set due_ts = last + ((interval_h * 3600) | int(0)) %}
-            {% set due_local = as_local(as_datetime(due_ts)) %}
-            {% set due_min = (due_local.hour * 60) + due_local.minute %}
-            {% set start_today_ts = as_timestamp(due_local.replace(hour=start_h, minute=start_m, second=0, microsecond=0)) | int(0) %}
-            {% if start_min < end_min %}
-              {% if due_min >= start_min and due_min < end_min %}
-                {{ due_ts | timestamp_local }}
-              {% elif due_min < start_min %}
-                {{ start_today_ts | timestamp_local }}
-              {% else %}
-                {{ (start_today_ts + 86400) | timestamp_local }}
-              {% endif %}
-            {% else %}
-              {% if due_min >= start_min or due_min < end_min %}
-                {{ due_ts | timestamp_local }}
-              {% else %}
-                {{ start_today_ts | timestamp_local }}
-              {% endif %}
-            {% endif %}
+            {{ as_datetime(e | int) }}
           {% endif %}
       - name: "Nedorachio zone 3 next run"
         device_class: timestamp
         state: >-
-          {% set last = states('sensor.nedorachio_irrigation_controller_zone_3_last_finished_epoch') | int(0) %}
-          {% set interval_h = states('number.nedorachio_irrigation_controller_zone_3_minimum_interval_hours') | float(0) %}
-          {% set start_h = states('number.nedorachio_irrigation_controller_schedule_start_hour') | int(0) %}
-          {% set start_m = states('number.nedorachio_irrigation_controller_schedule_start_minute') | int(0) %}
-          {% set end_h = states('number.nedorachio_irrigation_controller_schedule_end_hour') | int(8) %}
-          {% set end_m = states('number.nedorachio_irrigation_controller_schedule_end_minute') | int(0) %}
-          {% set start_min = (start_h * 60) + start_m %}
-          {% set end_min = (end_h * 60) + end_m %}
-          {% if last <= 0 or interval_h <= 0 or start_min == end_min %}
+          {% set e = states('sensor.nedorachio_irrigation_controller_zone_3_scheduled_next_start_epoch') %}
+          {% if e in ['unknown', 'unavailable', 'none', None] or e | float(default=-1) <= 0 %}
             {{ none }}
           {% else %}
-            {% set due_ts = last + ((interval_h * 3600) | int(0)) %}
-            {% set due_local = as_local(as_datetime(due_ts)) %}
-            {% set due_min = (due_local.hour * 60) + due_local.minute %}
-            {% set start_today_ts = as_timestamp(due_local.replace(hour=start_h, minute=start_m, second=0, microsecond=0)) | int(0) %}
-            {% if start_min < end_min %}
-              {% if due_min >= start_min and due_min < end_min %}
-                {{ due_ts | timestamp_local }}
-              {% elif due_min < start_min %}
-                {{ start_today_ts | timestamp_local }}
-              {% else %}
-                {{ (start_today_ts + 86400) | timestamp_local }}
-              {% endif %}
-            {% else %}
-              {% if due_min >= start_min or due_min < end_min %}
-                {{ due_ts | timestamp_local }}
-              {% else %}
-                {{ start_today_ts | timestamp_local }}
-              {% endif %}
-            {% endif %}
+            {{ as_datetime(e | int) }}
           {% endif %}
       - name: "Nedorachio zone 4 next run"
         device_class: timestamp
         state: >-
-          {% set last = states('sensor.nedorachio_irrigation_controller_zone_4_last_finished_epoch') | int(0) %}
-          {% set interval_h = states('number.nedorachio_irrigation_controller_zone_4_minimum_interval_hours') | float(0) %}
-          {% set start_h = states('number.nedorachio_irrigation_controller_schedule_start_hour') | int(0) %}
-          {% set start_m = states('number.nedorachio_irrigation_controller_schedule_start_minute') | int(0) %}
-          {% set end_h = states('number.nedorachio_irrigation_controller_schedule_end_hour') | int(8) %}
-          {% set end_m = states('number.nedorachio_irrigation_controller_schedule_end_minute') | int(0) %}
-          {% set start_min = (start_h * 60) + start_m %}
-          {% set end_min = (end_h * 60) + end_m %}
-          {% if last <= 0 or interval_h <= 0 or start_min == end_min %}
+          {% set e = states('sensor.nedorachio_irrigation_controller_zone_4_scheduled_next_start_epoch') %}
+          {% if e in ['unknown', 'unavailable', 'none', None] or e | float(default=-1) <= 0 %}
             {{ none }}
           {% else %}
-            {% set due_ts = last + ((interval_h * 3600) | int(0)) %}
-            {% set due_local = as_local(as_datetime(due_ts)) %}
-            {% set due_min = (due_local.hour * 60) + due_local.minute %}
-            {% set start_today_ts = as_timestamp(due_local.replace(hour=start_h, minute=start_m, second=0, microsecond=0)) | int(0) %}
-            {% if start_min < end_min %}
-              {% if due_min >= start_min and due_min < end_min %}
-                {{ due_ts | timestamp_local }}
-              {% elif due_min < start_min %}
-                {{ start_today_ts | timestamp_local }}
-              {% else %}
-                {{ (start_today_ts + 86400) | timestamp_local }}
-              {% endif %}
-            {% else %}
-              {% if due_min >= start_min or due_min < end_min %}
-                {{ due_ts | timestamp_local }}
-              {% else %}
-                {{ start_today_ts | timestamp_local }}
-              {% endif %}
-            {% endif %}
+            {{ as_datetime(e | int) }}
           {% endif %}
       - name: "Nedorachio zone 5 next run"
         device_class: timestamp
         state: >-
-          {% set last = states('sensor.nedorachio_irrigation_controller_zone_5_last_finished_epoch') | int(0) %}
-          {% set interval_h = states('number.nedorachio_irrigation_controller_zone_5_minimum_interval_hours') | float(0) %}
-          {% set start_h = states('number.nedorachio_irrigation_controller_schedule_start_hour') | int(0) %}
-          {% set start_m = states('number.nedorachio_irrigation_controller_schedule_start_minute') | int(0) %}
-          {% set end_h = states('number.nedorachio_irrigation_controller_schedule_end_hour') | int(8) %}
-          {% set end_m = states('number.nedorachio_irrigation_controller_schedule_end_minute') | int(0) %}
-          {% set start_min = (start_h * 60) + start_m %}
-          {% set end_min = (end_h * 60) + end_m %}
-          {% if last <= 0 or interval_h <= 0 or start_min == end_min %}
+          {% set e = states('sensor.nedorachio_irrigation_controller_zone_5_scheduled_next_start_epoch') %}
+          {% if e in ['unknown', 'unavailable', 'none', None] or e | float(default=-1) <= 0 %}
             {{ none }}
           {% else %}
-            {% set due_ts = last + ((interval_h * 3600) | int(0)) %}
-            {% set due_local = as_local(as_datetime(due_ts)) %}
-            {% set due_min = (due_local.hour * 60) + due_local.minute %}
-            {% set start_today_ts = as_timestamp(due_local.replace(hour=start_h, minute=start_m, second=0, microsecond=0)) | int(0) %}
-            {% if start_min < end_min %}
-              {% if due_min >= start_min and due_min < end_min %}
-                {{ due_ts | timestamp_local }}
-              {% elif due_min < start_min %}
-                {{ start_today_ts | timestamp_local }}
-              {% else %}
-                {{ (start_today_ts + 86400) | timestamp_local }}
-              {% endif %}
-            {% else %}
-              {% if due_min >= start_min or due_min < end_min %}
-                {{ due_ts | timestamp_local }}
-              {% else %}
-                {{ start_today_ts | timestamp_local }}
-              {% endif %}
-            {% endif %}
+            {{ as_datetime(e | int) }}
           {% endif %}
       - name: "Nedorachio zone 6 next run"
         device_class: timestamp
         state: >-
-          {% set last = states('sensor.nedorachio_irrigation_controller_zone_6_last_finished_epoch') | int(0) %}
-          {% set interval_h = states('number.nedorachio_irrigation_controller_zone_6_minimum_interval_hours') | float(0) %}
-          {% set start_h = states('number.nedorachio_irrigation_controller_schedule_start_hour') | int(0) %}
-          {% set start_m = states('number.nedorachio_irrigation_controller_schedule_start_minute') | int(0) %}
-          {% set end_h = states('number.nedorachio_irrigation_controller_schedule_end_hour') | int(8) %}
-          {% set end_m = states('number.nedorachio_irrigation_controller_schedule_end_minute') | int(0) %}
-          {% set start_min = (start_h * 60) + start_m %}
-          {% set end_min = (end_h * 60) + end_m %}
-          {% if last <= 0 or interval_h <= 0 or start_min == end_min %}
+          {% set e = states('sensor.nedorachio_irrigation_controller_zone_6_scheduled_next_start_epoch') %}
+          {% if e in ['unknown', 'unavailable', 'none', None] or e | float(default=-1) <= 0 %}
             {{ none }}
           {% else %}
-            {% set due_ts = last + ((interval_h * 3600) | int(0)) %}
-            {% set due_local = as_local(as_datetime(due_ts)) %}
-            {% set due_min = (due_local.hour * 60) + due_local.minute %}
-            {% set start_today_ts = as_timestamp(due_local.replace(hour=start_h, minute=start_m, second=0, microsecond=0)) | int(0) %}
-            {% if start_min < end_min %}
-              {% if due_min >= start_min and due_min < end_min %}
-                {{ due_ts | timestamp_local }}
-              {% elif due_min < start_min %}
-                {{ start_today_ts | timestamp_local }}
-              {% else %}
-                {{ (start_today_ts + 86400) | timestamp_local }}
-              {% endif %}
-            {% else %}
-              {% if due_min >= start_min or due_min < end_min %}
-                {{ due_ts | timestamp_local }}
-              {% else %}
-                {{ start_today_ts | timestamp_local }}
-              {% endif %}
-            {% endif %}
+            {{ as_datetime(e | int) }}
           {% endif %}
       - name: "Nedorachio zone 7 next run"
         device_class: timestamp
         state: >-
-          {% set last = states('sensor.nedorachio_irrigation_controller_zone_7_last_finished_epoch') | int(0) %}
-          {% set interval_h = states('number.nedorachio_irrigation_controller_zone_7_minimum_interval_hours') | float(0) %}
-          {% set start_h = states('number.nedorachio_irrigation_controller_schedule_start_hour') | int(0) %}
-          {% set start_m = states('number.nedorachio_irrigation_controller_schedule_start_minute') | int(0) %}
-          {% set end_h = states('number.nedorachio_irrigation_controller_schedule_end_hour') | int(8) %}
-          {% set end_m = states('number.nedorachio_irrigation_controller_schedule_end_minute') | int(0) %}
-          {% set start_min = (start_h * 60) + start_m %}
-          {% set end_min = (end_h * 60) + end_m %}
-          {% if last <= 0 or interval_h <= 0 or start_min == end_min %}
+          {% set e = states('sensor.nedorachio_irrigation_controller_zone_7_scheduled_next_start_epoch') %}
+          {% if e in ['unknown', 'unavailable', 'none', None] or e | float(default=-1) <= 0 %}
             {{ none }}
           {% else %}
-            {% set due_ts = last + ((interval_h * 3600) | int(0)) %}
-            {% set due_local = as_local(as_datetime(due_ts)) %}
-            {% set due_min = (due_local.hour * 60) + due_local.minute %}
-            {% set start_today_ts = as_timestamp(due_local.replace(hour=start_h, minute=start_m, second=0, microsecond=0)) | int(0) %}
-            {% if start_min < end_min %}
-              {% if due_min >= start_min and due_min < end_min %}
-                {{ due_ts | timestamp_local }}
-              {% elif due_min < start_min %}
-                {{ start_today_ts | timestamp_local }}
-              {% else %}
-                {{ (start_today_ts + 86400) | timestamp_local }}
-              {% endif %}
-            {% else %}
-              {% if due_min >= start_min or due_min < end_min %}
-                {{ due_ts | timestamp_local }}
-              {% else %}
-                {{ start_today_ts | timestamp_local }}
-              {% endif %}
-            {% endif %}
+            {{ as_datetime(e | int) }}
           {% endif %}
       - name: "Nedorachio zone 8 next run"
         device_class: timestamp
         state: >-
-          {% set last = states('sensor.nedorachio_irrigation_controller_zone_8_last_finished_epoch') | int(0) %}
-          {% set interval_h = states('number.nedorachio_irrigation_controller_zone_8_minimum_interval_hours') | float(0) %}
-          {% set start_h = states('number.nedorachio_irrigation_controller_schedule_start_hour') | int(0) %}
-          {% set start_m = states('number.nedorachio_irrigation_controller_schedule_start_minute') | int(0) %}
-          {% set end_h = states('number.nedorachio_irrigation_controller_schedule_end_hour') | int(8) %}
-          {% set end_m = states('number.nedorachio_irrigation_controller_schedule_end_minute') | int(0) %}
-          {% set start_min = (start_h * 60) + start_m %}
-          {% set end_min = (end_h * 60) + end_m %}
-          {% if last <= 0 or interval_h <= 0 or start_min == end_min %}
+          {% set e = states('sensor.nedorachio_irrigation_controller_zone_8_scheduled_next_start_epoch') %}
+          {% if e in ['unknown', 'unavailable', 'none', None] or e | float(default=-1) <= 0 %}
             {{ none }}
           {% else %}
-            {% set due_ts = last + ((interval_h * 3600) | int(0)) %}
-            {% set due_local = as_local(as_datetime(due_ts)) %}
-            {% set due_min = (due_local.hour * 60) + due_local.minute %}
-            {% set start_today_ts = as_timestamp(due_local.replace(hour=start_h, minute=start_m, second=0, microsecond=0)) | int(0) %}
-            {% if start_min < end_min %}
-              {% if due_min >= start_min and due_min < end_min %}
-                {{ due_ts | timestamp_local }}
-              {% elif due_min < start_min %}
-                {{ start_today_ts | timestamp_local }}
-              {% else %}
-                {{ (start_today_ts + 86400) | timestamp_local }}
-              {% endif %}
-            {% else %}
-              {% if due_min >= start_min or due_min < end_min %}
-                {{ due_ts | timestamp_local }}
-              {% else %}
-                {{ start_today_ts | timestamp_local }}
-              {% endif %}
-            {% endif %}
+            {{ as_datetime(e | int) }}
           {% endif %}
       - name: "Nedorachio zone 1 next run local"
         state: >-
