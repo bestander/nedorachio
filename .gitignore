@@ -5,3 +5,7 @@ firmware/.piolibdeps/
 firmware/build/
 .DS_Store
 *.swp
+.venv/
+.pytest_cache/
+__pycache__/
+*.pyc

@@ -185,6 +185,14 @@ globals:
     restore_value: false
     initial_value: '0'
 
+  # When false, drive_zone(OFF) turns the relay off without stamping
+  # zone_N_last_finished_epoch. Engine uses this for soak/chunk transitions
+  # and cancelled runs so cadence reflects completed waterings only.
+  - id: stamp_cadence_on_zone_off
+    type: bool
+    restore_value: false
+    initial_value: 'true'
+
   # Per-zone "last finished" epoch — the cadence scheduler reads these to
   # decide whether a zone is due. Written by `drive_zone` whenever a zone
   # transitions on→off, regardless of whether it was a scheduled run, manual
@@ -293,11 +301,10 @@ script:
             id(currently_on_zone) = zone_id;
             id(zone_started_at_ms) = millis();
           } else if (id(currently_on_zone) == zone_id) {
-            // Stamp last-finished epoch for cadence — covers schedule, manual
-            // HA toggle, local button, and engine teardown. Best-effort: only
-            // when the controller has any plausible time (HA or fallback).
+            // Stamp last-finished epoch for cadence when this OFF completes a
+            // watering (not soak/chunk transitions or fault cancels).
             uint32_t now_e = (uint32_t)id(effective_now_epoch).state;
-            if (now_e > 0) {
+            if (now_e > 0 && id(stamp_cadence_on_zone_off)) {
               switch (zone_id) {
                 case 1: id(zone_1_last_finished_epoch) = now_e; break;
                 case 2: id(zone_2_last_finished_epoch) = now_e; break;
@@ -309,6 +316,7 @@ script:
                 case 8: id(zone_8_last_finished_epoch) = now_e; break;
               }
             }
+            id(stamp_cadence_on_zone_off) = true;
             id(currently_on_zone) = 0;
             id(zone_started_at_ms) = 0;
           }
@@ -341,26 +349,8 @@ script:
     mode: single
     then:
       - lambda: |-
-          // Stamp last-finished for the zone that was actually running (if any)
-          // — covers e-stop and runtime-cap paths. Skipped on boot because
-          // currently_on_zone resets to 0 across reboots.
-          int was_on = id(currently_on_zone);
-          if (was_on != 0) {
-            uint32_t now_e = (uint32_t)id(effective_now_epoch).state;
-            if (now_e > 0) {
-              switch (was_on) {
-                case 1: id(zone_1_last_finished_epoch) = now_e; break;
-                case 2: id(zone_2_last_finished_epoch) = now_e; break;
-                case 3: id(zone_3_last_finished_epoch) = now_e; break;
-                case 4: id(zone_4_last_finished_epoch) = now_e; break;
-                case 5: id(zone_5_last_finished_epoch) = now_e; break;
-                case 6: id(zone_6_last_finished_epoch) = now_e; break;
-                case 7: id(zone_7_last_finished_epoch) = now_e; break;
-                case 8: id(zone_8_last_finished_epoch) = now_e; break;
-              }
-            }
-          }
-          // Force every relay off, regardless of state.
+          // Force every relay off, regardless of state. Cadence is stamped only
+          // via drive_zone when a run completes or the user turns a zone off.
           id(relay_1_out).turn_off(); id(zone_1_actual_state) = false; id(zone_1).publish_state(false);
           id(relay_2_out).turn_off(); id(zone_2_actual_state) = false; id(zone_2).publish_state(false);
           id(relay_3_out).turn_off(); id(zone_3_actual_state) = false; id(zone_3).publish_state(false);
