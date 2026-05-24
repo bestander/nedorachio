@@ -19,8 +19,6 @@ automation:
         minutes: "/10"
     action:
       - variables:
-          # Sum precipitation_amount over hourly entries in the last 48h, or
-          # use a directly-reported observed-rainfall sensor if available.
           rain_mm: >-
             {% set obs_id = 'sensor.rain_observed_48h' %}
             {% if states(obs_id) not in ['unknown','unavailable','none', None] %}
@@ -28,11 +26,103 @@ automation:
             {% else %}
               0.0
             {% endif %}
+          current_mm: >-
+            {{ states('number.nedorachio_irrigation_controller_rain_mm_last_48h') | float(-1) }}
+      - condition: template
+        value_template: "{{ (rain_mm | float(0)) != (current_mm | float(-1)) }}"
       - service: number.set_value
         target:
           entity_id: number.nedorachio_irrigation_controller_rain_mm_last_48h
         data:
           value: "{{ rain_mm }}"
+
+  - id: nedorachio_log_schedule_gate
+    alias: "Nedorachio: log schedule gate reason"
+    mode: queued
+    max: 20
+    trigger:
+      - platform: state
+        entity_id: sensor.nedorachio_irrigation_controller_last_schedule_gate_reason
+    condition:
+      - condition: template
+        value_template: >-
+          {% set r = trigger.to_state.state %}
+          {{ r not in ['none', 'nothing_due', 'unknown', 'unavailable', ''] }}
+      - condition: template
+        value_template: "{{ trigger.to_state.state != trigger.from_state.state }}"
+    action:
+      - service: logbook.log
+        data:
+          name: Nedorachio
+          message: >-
+            Schedule did not start: {{ trigger.to_state.state | replace('_', ' ') }}
+            {% set z = states('sensor.nedorachio_irrigation_controller_schedule_gate_due_zone') | int(0) %}
+            {% if z > 0 %}(zone {{ z }} due){% endif %}.
+            Phase {{ states('sensor.nedorachio_irrigation_controller_current_phase') }}.
+          entity_id: sensor.nedorachio_irrigation_controller_next_due_zone
+
+  - id: nedorachio_log_preflight_block
+    alias: "Nedorachio: log pre-flight block"
+    mode: queued
+    max: 20
+    trigger:
+      - platform: state
+        entity_id: sensor.nedorachio_irrigation_controller_last_pre_flight_failure_reason
+    condition:
+      - condition: template
+        value_template: >-
+          {% set r = trigger.to_state.state %}
+          {{ r not in ['none', 'unknown', 'unavailable', ''] }}
+      - condition: template
+        value_template: "{{ trigger.to_state.state != trigger.from_state.state }}"
+    action:
+      - service: logbook.log
+        data:
+          name: Nedorachio
+          message: >-
+            Pre-flight blocked run: {{ trigger.to_state.state | replace('_', ' ') }}.
+            Next due zone {{ states('sensor.nedorachio_irrigation_controller_next_due_zone') }}.
+            PSI {{ states('sensor.nedorachio_irrigation_controller_pressure') }},
+            rain 48h {{ states('number.nedorachio_irrigation_controller_rain_mm_last_48h') }} mm.
+          entity_id: sensor.nedorachio_irrigation_controller_last_pre_flight_failure_reason
+
+  - id: nedorachio_log_zone_started
+    alias: "Nedorachio: log zone started"
+    trigger:
+      - platform: state
+        entity_id: sensor.nedorachio_irrigation_controller_currently_running_zone
+    condition:
+      - condition: template
+        value_template: "{{ trigger.to_state.state | int(0) > 0 }}"
+      - condition: template
+        value_template: "{{ trigger.from_state.state | int(0) == 0 }}"
+    action:
+      - service: logbook.log
+        data:
+          name: Nedorachio
+          message: >-
+            Zone {{ trigger.to_state.state }} valve opened.
+            Phase {{ states('sensor.nedorachio_irrigation_controller_current_phase') }}.
+          entity_id: sensor.nedorachio_irrigation_controller_currently_running_zone
+
+  - id: nedorachio_log_zone_finished
+    alias: "Nedorachio: log zone finished"
+    trigger:
+      - platform: state
+        entity_id: sensor.nedorachio_irrigation_controller_currently_running_zone
+    condition:
+      - condition: template
+        value_template: "{{ trigger.to_state.state | int(0) == 0 }}"
+      - condition: template
+        value_template: "{{ trigger.from_state.state | int(0) > 0 }}"
+    action:
+      - service: logbook.log
+        data:
+          name: Nedorachio
+          message: >-
+            Zone {{ trigger.from_state.state }} valve closed.
+            Outcome {{ states('sensor.nedorachio_irrigation_controller_last_run_outcome') }}.
+          entity_id: sensor.nedorachio_irrigation_controller_last_run_outcome
 
   - id: nedorachio_alarm_notify
     alias: "Nedorachio: alarm notifications"
@@ -76,13 +166,22 @@ automation:
         target:
           entity_id: script.nedorachio_apply_config_profile
 
-  - id: nedorachio_apply_profile_on_reload_and_reconcile
-    alias: "Nedorachio: apply config profile on reload/reconcile"
+  - id: nedorachio_apply_profile_on_reload
+    alias: "Nedorachio: apply config profile on reload"
     trigger:
       - platform: event
         event_type: automation_reloaded
-      - platform: time_pattern
-        minutes: "/30"
+    action:
+      - service: script.turn_on
+        target:
+          entity_id: script.nedorachio_apply_config_profile
+
+  - id: nedorachio_apply_profile_on_change
+    alias: "Nedorachio: apply config profile on profile change"
+    trigger:
+      - platform: state
+        entity_id: sensor.nedorachio_config_profile
+        attribute: profile
     action:
       - service: script.turn_on
         target:
@@ -536,3 +635,70 @@ template:
               {{ (delta // 86400) }}d {{ ((delta % 86400) // 3600) }}h
             {% endif %}
           {% endif %}
+
+homeassistant:
+  customize:
+    sensor.nedorachio_zone_1_last_triggered_ago:
+      logbook: false
+    sensor.nedorachio_zone_2_last_triggered_ago:
+      logbook: false
+    sensor.nedorachio_zone_3_last_triggered_ago:
+      logbook: false
+    sensor.nedorachio_zone_4_last_triggered_ago:
+      logbook: false
+    sensor.nedorachio_zone_5_last_triggered_ago:
+      logbook: false
+    sensor.nedorachio_zone_6_last_triggered_ago:
+      logbook: false
+    sensor.nedorachio_zone_7_last_triggered_ago:
+      logbook: false
+    sensor.nedorachio_zone_8_last_triggered_ago:
+      logbook: false
+    sensor.nedorachio_zone_1_next_run_local:
+      logbook: false
+    sensor.nedorachio_zone_2_next_run_local:
+      logbook: false
+    sensor.nedorachio_zone_3_next_run_local:
+      logbook: false
+    sensor.nedorachio_zone_4_next_run_local:
+      logbook: false
+    sensor.nedorachio_zone_5_next_run_local:
+      logbook: false
+    sensor.nedorachio_zone_6_next_run_local:
+      logbook: false
+    sensor.nedorachio_zone_7_next_run_local:
+      logbook: false
+    sensor.nedorachio_zone_8_next_run_local:
+      logbook: false
+    sensor.nedorachio_irrigation_controller_zone_1_scheduled_next_start_epoch:
+      logbook: false
+    sensor.nedorachio_irrigation_controller_zone_2_scheduled_next_start_epoch:
+      logbook: false
+    sensor.nedorachio_irrigation_controller_zone_3_scheduled_next_start_epoch:
+      logbook: false
+    sensor.nedorachio_irrigation_controller_zone_4_scheduled_next_start_epoch:
+      logbook: false
+    sensor.nedorachio_irrigation_controller_zone_5_scheduled_next_start_epoch:
+      logbook: false
+    sensor.nedorachio_irrigation_controller_zone_6_scheduled_next_start_epoch:
+      logbook: false
+    sensor.nedorachio_irrigation_controller_zone_7_scheduled_next_start_epoch:
+      logbook: false
+    sensor.nedorachio_irrigation_controller_zone_8_scheduled_next_start_epoch:
+      logbook: false
+    sensor.nedorachio_zone_1_next_run:
+      logbook: false
+    sensor.nedorachio_zone_2_next_run:
+      logbook: false
+    sensor.nedorachio_zone_3_next_run:
+      logbook: false
+    sensor.nedorachio_zone_4_next_run:
+      logbook: false
+    sensor.nedorachio_zone_5_next_run:
+      logbook: false
+    sensor.nedorachio_zone_6_next_run:
+      logbook: false
+    sensor.nedorachio_zone_7_next_run:
+      logbook: false
+    sensor.nedorachio_zone_8_next_run:
+      logbook: false

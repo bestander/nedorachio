@@ -220,6 +220,16 @@ class IrrigationHarness:
     def zone_last_finished(self, zone_id: int) -> int:
         return self.sim.zone_last_finished(zone_id)
 
+    def valve_is_open(self, zone_id: int) -> bool:
+        return self.sim.zones[zone_id - 1].actual_state
+
+    def open_valves(self) -> set[int]:
+        return {
+            zid
+            for zid in range(1, 9)
+            if self.config.zone_enabled(zid) and self.valve_is_open(zid)
+        }
+
     def events(self) -> list[SimEvent]:
         return self.sim.events
 

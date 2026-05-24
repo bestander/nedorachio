@@ -10,11 +10,11 @@
 globals:
   - id: skip_next_run_pending
     type: bool
-    restore_value: true
+    restore_value: false
     initial_value: 'false'
   - id: last_run_started_epoch
     type: uint32_t
-    restore_value: true
+    restore_value: false
     initial_value: '0'
 
   # --- Plan-readout state ---
@@ -32,11 +32,11 @@ globals:
     initial_value: '0'
   - id: last_run_finished_epoch
     type: uint32_t
-    restore_value: true
+    restore_value: false
     initial_value: '0'
   - id: last_run_outcome_str
     type: std::string
-    restore_value: true
+    restore_value: false
     initial_value: '""'
 
   # Internal: zone the evaluator picked for the current tick.
@@ -80,6 +80,16 @@ globals:
     initial_value: '0'
   - id: zone_8_scheduled_next_epoch
     type: uint32_t
+    restore_value: false
+    initial_value: '0'
+
+  # Why the cadence evaluator did not start a run (surfaced to HA logbook).
+  - id: schedule_gate_reason_str
+    type: std::string
+    restore_value: false
+    initial_value: '"none"'
+  - id: schedule_gate_due_zone
+    type: int
     restore_value: false
     initial_value: '0'
 
@@ -243,7 +253,13 @@ interval:
             }
           }
 
-          uint32_t cursor = now_epoch;
+          // Anchor serial queue to the next valid window/blackout slot, not raw
+          // wall time — prevents Friday blackout evenings from showing same-night
+          // plan times that the evaluator will never fire.
+          uint32_t cursor = snap_next(now_epoch);
+          if (cursor == 0)
+            cursor = now_epoch;
+
           uint32_t dur_s = (uint32_t) (id(maximum_runtime_minutes).state * 60.0f);
           if (dur_s < 60)
             dur_s = 60;
@@ -261,34 +277,96 @@ interval:
               continue;
             assigned[z] = actual;
             uint64_t nc = (uint64_t) actual + dur_s;
-            cursor = nc > 0xFFFFFFFFu ? 0xFFFFFFFFu : (uint32_t) nc;
+            uint32_t next_cursor = nc > 0xFFFFFFFFu ? 0xFFFFFFFFu : (uint32_t) nc;
+            uint32_t snapped = snap_next(next_cursor);
+            cursor = snapped != 0 ? snapped : next_cursor;
           }
 
-          id(zone_1_scheduled_next_epoch) = assigned[1];
-          id(zone_2_scheduled_next_epoch) = assigned[2];
-          id(zone_3_scheduled_next_epoch) = assigned[3];
-          id(zone_4_scheduled_next_epoch) = assigned[4];
-          id(zone_5_scheduled_next_epoch) = assigned[5];
-          id(zone_6_scheduled_next_epoch) = assigned[6];
-          id(zone_7_scheduled_next_epoch) = assigned[7];
-          id(zone_8_scheduled_next_epoch) = assigned[8];
+          auto publish_if_changed = [&](uint32_t &dest, uint32_t value) {
+            if (dest != value)
+              dest = value;
+          };
+          publish_if_changed(id(zone_1_scheduled_next_epoch), assigned[1]);
+          publish_if_changed(id(zone_2_scheduled_next_epoch), assigned[2]);
+          publish_if_changed(id(zone_3_scheduled_next_epoch), assigned[3]);
+          publish_if_changed(id(zone_4_scheduled_next_epoch), assigned[4]);
+          publish_if_changed(id(zone_5_scheduled_next_epoch), assigned[5]);
+          publish_if_changed(id(zone_6_scheduled_next_epoch), assigned[6]);
+          publish_if_changed(id(zone_7_scheduled_next_epoch), assigned[7]);
+          publish_if_changed(id(zone_8_scheduled_next_epoch), assigned[8]);
 
   # Cadence evaluator: runs every 60s; cheap when nothing is due.
   - interval: 60s
     then:
       - lambda: |-
-          if (!id(fallback_schedule_enabled).state) return;
-          if (id(currently_on_zone) != 0) return;
-          if (id(run_one_zone).is_running()) return;
-          if (id(run_one_zone_with_retry).is_running()) return;
-          if (id(run_full_cycle).is_running()) return;
-          if (id(schedule_fire_handler).is_running()) return;
+          auto set_gate = [&](const char *reason, int due_zone = 0) {
+            id(schedule_gate_reason_str) = reason;
+            id(schedule_gate_due_zone) = due_zone;
+          };
+
+          if (!id(fallback_schedule_enabled).state) {
+            set_gate("schedule_disabled");
+            return;
+          }
+          if (id(currently_on_zone) != 0) {
+            set_gate("zone_already_running", id(currently_on_zone));
+            return;
+          }
+          if (id(run_one_zone).is_running()) {
+            set_gate("script_running");
+            return;
+          }
+          if (id(run_one_zone_with_retry).is_running()) {
+            set_gate("script_running");
+            return;
+          }
+          if (id(run_full_cycle).is_running()) {
+            set_gate("script_running");
+            return;
+          }
+          if (id(schedule_fire_handler).is_running()) {
+            set_gate("script_running");
+            return;
+          }
 
           uint32_t now_epoch = (uint32_t)id(effective_now_epoch).state;
-          if (now_epoch == 0) return;
+          if (now_epoch == 0) {
+            set_gate("time_not_synced");
+            return;
+          }
           uint32_t cooldown_s = (uint32_t)(id(attempt_cooldown_minutes).state * 60.0f);
           if (cooldown_s > 0 && id(last_non_completed_attempt_epoch) > 0 &&
               now_epoch < id(last_non_completed_attempt_epoch) + cooldown_s) {
+            set_gate("attempt_cooldown");
+            return;
+          }
+
+          int mask = (int)id(zones_enabled_bitmask).state;
+          int picked = 0;
+          for (int zid = 1; zid <= 8 && picked == 0; zid++) {
+            if (((mask >> (zid - 1)) & 0x1) == 0) continue;
+
+            uint32_t last_finished = 0;
+            float interval_h = 0;
+            switch (zid) {
+              case 1: last_finished = id(zone_1_last_finished_epoch); interval_h = id(zone_1_min_interval_hours).state; break;
+              case 2: last_finished = id(zone_2_last_finished_epoch); interval_h = id(zone_2_min_interval_hours).state; break;
+              case 3: last_finished = id(zone_3_last_finished_epoch); interval_h = id(zone_3_min_interval_hours).state; break;
+              case 4: last_finished = id(zone_4_last_finished_epoch); interval_h = id(zone_4_min_interval_hours).state; break;
+              case 5: last_finished = id(zone_5_last_finished_epoch); interval_h = id(zone_5_min_interval_hours).state; break;
+              case 6: last_finished = id(zone_6_last_finished_epoch); interval_h = id(zone_6_min_interval_hours).state; break;
+              case 7: last_finished = id(zone_7_last_finished_epoch); interval_h = id(zone_7_min_interval_hours).state; break;
+              case 8: last_finished = id(zone_8_last_finished_epoch); interval_h = id(zone_8_min_interval_hours).state; break;
+            }
+            uint32_t interval_s = (uint32_t)(interval_h * 3600.0f);
+            if (last_finished == 0) {
+              last_finished = id(fallback_start_epoch_est);
+            }
+            bool due = (now_epoch >= last_finished + interval_s);
+            if (due) picked = zid;
+          }
+          if (picked == 0) {
+            set_gate("nothing_due");
             return;
           }
 
@@ -310,58 +388,40 @@ interval:
           int now_min = hour * 60 + minute;
           int start_min = (int)id(schedule_start_hour).state * 60 + (int)id(schedule_start_minute).state;
           int end_min = (int)id(schedule_end_hour).state * 60 + (int)id(schedule_end_minute).state;
-          if (start_min == end_min) return;  // zero-length window
+          if (start_min == end_min) {
+            set_gate("window_not_configured", picked);
+            return;
+          }
           bool in_window = (start_min < end_min)
               ? (now_min >= start_min && now_min < end_min)
               : (now_min >= start_min || now_min < end_min);
-          if (!in_window) return;
-          int dow_mon0 = 0;  // 0=Mon..6=Sun
+          if (!in_window) {
+            set_gate("outside_watering_window", picked);
+            return;
+          }
+          int dow_mon0 = 0;
           if (ha_now.is_valid()) {
-            // ESPHome: day_of_week is 1=Sunday ... 7=Saturday.
             int dow_sun1 = ha_now.day_of_week;
             dow_mon0 = (dow_sun1 + 5) % 7;
           } else {
             time_t est_epoch = (time_t)now_epoch - 5 * 3600;
             struct tm now_est_tm;
             gmtime_r(&est_epoch, &now_est_tm);
-            // tm_wday: 0=Sunday ... 6=Saturday.
             dow_mon0 = (now_est_tm.tm_wday + 6) % 7;
           }
           int blackout_mask = (int)id(blackout_weekday_bitmask).state;
-          if (((blackout_mask >> dow_mon0) & 0x1) != 0) return;
-
-          int mask = (int)id(zones_enabled_bitmask).state;
-          int picked = 0;
-          for (int zid = 1; zid <= 8 && picked == 0; zid++) {
-            if (((mask >> (zid - 1)) & 0x1) == 0) continue;
-
-            uint32_t last_finished = 0;
-            float interval_h = 0;
-            switch (zid) {
-              case 1: last_finished = id(zone_1_last_finished_epoch); interval_h = id(zone_1_min_interval_hours).state; break;
-              case 2: last_finished = id(zone_2_last_finished_epoch); interval_h = id(zone_2_min_interval_hours).state; break;
-              case 3: last_finished = id(zone_3_last_finished_epoch); interval_h = id(zone_3_min_interval_hours).state; break;
-              case 4: last_finished = id(zone_4_last_finished_epoch); interval_h = id(zone_4_min_interval_hours).state; break;
-              case 5: last_finished = id(zone_5_last_finished_epoch); interval_h = id(zone_5_min_interval_hours).state; break;
-              case 6: last_finished = id(zone_6_last_finished_epoch); interval_h = id(zone_6_min_interval_hours).state; break;
-              case 7: last_finished = id(zone_7_last_finished_epoch); interval_h = id(zone_7_min_interval_hours).state; break;
-              case 8: last_finished = id(zone_8_last_finished_epoch); interval_h = id(zone_8_min_interval_hours).state; break;
-            }
-            uint32_t interval_s = (uint32_t)(interval_h * 3600.0f);
-            if (last_finished == 0) {
-              // Safety net for unexpected zeroed NVS: treat as baseline date.
-              last_finished = id(fallback_start_epoch_est);
-            }
-            bool due = (now_epoch >= last_finished + interval_s);
-            if (due) picked = zid;
+          if (((blackout_mask >> dow_mon0) & 0x1) != 0) {
+            set_gate("blackout_day", picked);
+            return;
           }
-          if (picked == 0) return;
 
           if (id(skip_next_run_pending)) {
             id(skip_next_run_pending) = false;
+            set_gate("skip_next_run", picked);
             ESP_LOGI("schedule", "Skip flag consumed; not firing zone %d.", picked);
             return;
           }
+          set_gate("none", picked);
           id(due_zone_id) = picked;
       - if:
           condition:
@@ -390,6 +450,8 @@ script:
             - lambda: 'id(due_zone_id) = 0;'
             - script.stop: schedule_fire_handler
       - lambda: |-
+          id(schedule_gate_reason_str) = "none";
+          id(schedule_gate_due_zone) = 0;
           if (id(time_synced).state) {
             id(last_run_started_epoch) = (uint32_t)id(effective_now_epoch).state;
           }
@@ -457,7 +519,20 @@ text_sensor:
       if (id(pre_flight_reason).empty()) return std::string("none");
       return id(pre_flight_reason);
 
+  - platform: template
+    name: "Last schedule gate reason"
+    id: last_schedule_gate_reason
+    update_interval: 5s
+    lambda: 'return id(schedule_gate_reason_str);'
+
 sensor:
+  - platform: template
+    name: "Schedule gate due zone"
+    id: schedule_gate_due_zone_sensor
+    update_interval: 5s
+    accuracy_decimals: 0
+    lambda: 'return (float) id(schedule_gate_due_zone);'
+
   - platform: template
     name: "Currently running zone"
     id: currently_running_zone

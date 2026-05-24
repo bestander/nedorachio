@@ -1,4 +1,5 @@
-# Persisted per-zone stats and daily/monthly aggregates.
+# Persisted per-zone lifetime totals only; last-run snapshots and daily
+# aggregates are RAM-only (recomputed after reboot).
 
 globals:
   # --- Per zone, persisted ---
@@ -16,15 +17,15 @@ globals:
     initial_value: '0'
   - id: zone_1_last_gallons
     type: float
-    restore_value: true
+    restore_value: false
     initial_value: '0'
   - id: zone_1_last_duration_s
     type: uint32_t
-    restore_value: true
+    restore_value: false
     initial_value: '0'
   - id: zone_1_last_run_at
     type: uint32_t
-    restore_value: true
+    restore_value: false
     initial_value: '0'
 
   - id: zone_2_run_count_total
@@ -41,15 +42,15 @@ globals:
     initial_value: '0'
   - id: zone_2_last_gallons
     type: float
-    restore_value: true
+    restore_value: false
     initial_value: '0'
   - id: zone_2_last_duration_s
     type: uint32_t
-    restore_value: true
+    restore_value: false
     initial_value: '0'
   - id: zone_2_last_run_at
     type: uint32_t
-    restore_value: true
+    restore_value: false
     initial_value: '0'
 
   - id: zone_3_run_count_total
@@ -66,15 +67,15 @@ globals:
     initial_value: '0'
   - id: zone_3_last_gallons
     type: float
-    restore_value: true
+    restore_value: false
     initial_value: '0'
   - id: zone_3_last_duration_s
     type: uint32_t
-    restore_value: true
+    restore_value: false
     initial_value: '0'
   - id: zone_3_last_run_at
     type: uint32_t
-    restore_value: true
+    restore_value: false
     initial_value: '0'
 
   - id: zone_4_run_count_total
@@ -91,15 +92,15 @@ globals:
     initial_value: '0'
   - id: zone_4_last_gallons
     type: float
-    restore_value: true
+    restore_value: false
     initial_value: '0'
   - id: zone_4_last_duration_s
     type: uint32_t
-    restore_value: true
+    restore_value: false
     initial_value: '0'
   - id: zone_4_last_run_at
     type: uint32_t
-    restore_value: true
+    restore_value: false
     initial_value: '0'
 
   - id: zone_5_run_count_total
@@ -116,15 +117,15 @@ globals:
     initial_value: '0'
   - id: zone_5_last_gallons
     type: float
-    restore_value: true
+    restore_value: false
     initial_value: '0'
   - id: zone_5_last_duration_s
     type: uint32_t
-    restore_value: true
+    restore_value: false
     initial_value: '0'
   - id: zone_5_last_run_at
     type: uint32_t
-    restore_value: true
+    restore_value: false
     initial_value: '0'
 
   - id: zone_6_run_count_total
@@ -141,15 +142,15 @@ globals:
     initial_value: '0'
   - id: zone_6_last_gallons
     type: float
-    restore_value: true
+    restore_value: false
     initial_value: '0'
   - id: zone_6_last_duration_s
     type: uint32_t
-    restore_value: true
+    restore_value: false
     initial_value: '0'
   - id: zone_6_last_run_at
     type: uint32_t
-    restore_value: true
+    restore_value: false
     initial_value: '0'
 
   - id: zone_7_run_count_total
@@ -166,15 +167,15 @@ globals:
     initial_value: '0'
   - id: zone_7_last_gallons
     type: float
-    restore_value: true
+    restore_value: false
     initial_value: '0'
   - id: zone_7_last_duration_s
     type: uint32_t
-    restore_value: true
+    restore_value: false
     initial_value: '0'
   - id: zone_7_last_run_at
     type: uint32_t
-    restore_value: true
+    restore_value: false
     initial_value: '0'
 
   - id: zone_8_run_count_total
@@ -191,15 +192,15 @@ globals:
     initial_value: '0'
   - id: zone_8_last_gallons
     type: float
-    restore_value: true
+    restore_value: false
     initial_value: '0'
   - id: zone_8_last_duration_s
     type: uint32_t
-    restore_value: true
+    restore_value: false
     initial_value: '0'
   - id: zone_8_last_run_at
     type: uint32_t
-    restore_value: true
+    restore_value: false
     initial_value: '0'
 
   # --- Run-time accumulators (cleared at start of each per-zone run) ---
@@ -215,27 +216,27 @@ globals:
   # --- Aggregates ---
   - id: gallons_today
     type: float
-    restore_value: true
+    restore_value: false
     initial_value: '0'
   - id: gallons_this_month
     type: float
-    restore_value: true
+    restore_value: false
     initial_value: '0'
   - id: runs_today
     type: uint32_t
-    restore_value: true
+    restore_value: false
     initial_value: '0'
   - id: runs_this_month
     type: uint32_t
-    restore_value: true
+    restore_value: false
     initial_value: '0'
   - id: stats_last_rollover_day_of_year
     type: int
-    restore_value: true
+    restore_value: false
     initial_value: '-1'
   - id: stats_last_rollover_month
     type: int
-    restore_value: true
+    restore_value: false
     initial_value: '-1'
 
 # Expose stats as sensors.

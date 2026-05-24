@@ -101,35 +101,35 @@ globals:
     initial_value: '0'
   - id: zone_1_cycle_delivered_gallons
     type: float
-    restore_value: true
+    restore_value: false
     initial_value: '0'
   - id: zone_2_cycle_delivered_gallons
     type: float
-    restore_value: true
+    restore_value: false
     initial_value: '0'
   - id: zone_3_cycle_delivered_gallons
     type: float
-    restore_value: true
+    restore_value: false
     initial_value: '0'
   - id: zone_4_cycle_delivered_gallons
     type: float
-    restore_value: true
+    restore_value: false
     initial_value: '0'
   - id: zone_5_cycle_delivered_gallons
     type: float
-    restore_value: true
+    restore_value: false
     initial_value: '0'
   - id: zone_6_cycle_delivered_gallons
     type: float
-    restore_value: true
+    restore_value: false
     initial_value: '0'
   - id: zone_7_cycle_delivered_gallons
     type: float
-    restore_value: true
+    restore_value: false
     initial_value: '0'
   - id: zone_8_cycle_delivered_gallons
     type: float
-    restore_value: true
+    restore_value: false
     initial_value: '0'
 
 binary_sensor:

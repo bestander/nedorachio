@@ -100,6 +100,8 @@ class ControllerSimulator:
         self.skip_next_run_pending: bool = False
         self.due_zone_id: int = 0
         self.last_non_completed_attempt_epoch: int = 0
+        self.schedule_gate_reason: str = "none"
+        self.schedule_gate_due_zone: int = 0
         self.last_run_started_epoch: int = 0
         self.last_run_finished_epoch: int = 0
         self.last_run_outcome: str = ""
@@ -354,9 +356,14 @@ class ControllerSimulator:
         else:
             self._emit(EventType.RUN_COMPLETE, zone_id=zone_id)
 
+    def _set_schedule_gate(self, reason: str, due_zone: int = 0) -> None:
+        self.schedule_gate_reason = reason
+        self.schedule_gate_due_zone = due_zone
+
     # --------------------------------------------------- schedule_fire_handler
     def _schedule_fire_handler(self) -> Generator:
         zid = self.due_zone_id
+        self._set_schedule_gate("none", 0)
         yield from self._run_pre_flight(is_schedule=True)
         if not self.pre_flight_passed:
             self.due_zone_id = 0
@@ -523,7 +530,7 @@ class ControllerSimulator:
 
         ideals.sort(key=lambda x: (x[0], x[1]))
 
-        cursor = now
+        cursor = self._snap_next(now) or now
         dur_s = max(60, int(cfg.maximum_runtime_minutes * 60))
         assigned: dict[int, int] = {}
 
@@ -533,10 +540,13 @@ class ControllerSimulator:
             if not actual:
                 continue
             assigned[zid] = actual
-            cursor = actual + dur_s
+            next_cursor = actual + dur_s
+            cursor = self._snap_next(next_cursor) or next_cursor
 
-        for zid, epoch in assigned.items():
-            self.zones[zid - 1].scheduled_next_epoch = epoch
+        for zid in range(1, 9):
+            epoch = assigned.get(zid, 0)
+            if self.zones[zid - 1].scheduled_next_epoch != epoch:
+                self.zones[zid - 1].scheduled_next_epoch = epoch
 
         self._emit(EventType.PLAN_UPDATED)
 
@@ -544,14 +554,18 @@ class ControllerSimulator:
     def _cadence_evaluator(self) -> None:
         cfg = self.config
         if not cfg.fallback_schedule_enabled:
+            self._set_schedule_gate("schedule_disabled")
             return
         if self.currently_on_zone != 0:
+            self._set_schedule_gate("zone_already_running", self.currently_on_zone)
             return
         if self.is_script_running():
+            self._set_schedule_gate("script_running")
             return
 
         now = self.clock.epoch
         if now == 0:
+            self._set_schedule_gate("time_not_synced")
             return
 
         cooldown_s = int(cfg.attempt_cooldown_minutes * 60)
@@ -560,21 +574,27 @@ class ControllerSimulator:
             and self.last_non_completed_attempt_epoch > 0
             and now < self.last_non_completed_attempt_epoch + cooldown_s
         ):
-            return
-
-        if not self._in_watering_window():
-            return
-        if self._is_blackout():
+            self._set_schedule_gate("attempt_cooldown")
             return
 
         picked = self.next_due_zone()
         if picked == 0:
+            self._set_schedule_gate("nothing_due")
+            return
+
+        if not self._in_watering_window():
+            self._set_schedule_gate("outside_watering_window", picked)
+            return
+        if self._is_blackout():
+            self._set_schedule_gate("blackout_day", picked)
             return
 
         if self.skip_next_run_pending:
             self.skip_next_run_pending = False
+            self._set_schedule_gate("skip_next_run", picked)
             return
 
+        self._set_schedule_gate("none", picked)
         self.due_zone_id = picked
         self._start_script("schedule_fire_handler", self._schedule_fire_handler())
 
