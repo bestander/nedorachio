@@ -1,0 +1,10 @@
+{
+  "name": "nedorachio",
+  "version": "1.0.0",
+  "dependencies": [
+    {
+      "name": "bblanchon/ArduinoJson",
+      "version": "^7.0.0"
+    }
+  ]
+}

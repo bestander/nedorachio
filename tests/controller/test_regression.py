@@ -10,7 +10,7 @@ from __future__ import annotations
 import pytest
 
 from tests.controller.harness import IrrigationHarness, dt_epoch
-from tests.controller.simulator import EventType
+from nedorachio.models import EventType
 
 
 class TestGallonsTargetProductionProfile:

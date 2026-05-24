@@ -11,12 +11,8 @@ Testing strategy (two layers)
    cooperative script model (same semantics as fixed firmware, not same
    implementation). Catches plan drift, blackout gating, cooldown, recovery.
 
-2. **Firmware contracts** (`firmware_contract.py`) — static checks on real
-   ESPHome YAML. Catches ESP-specific anti-patterns the simulator cannot
-   model (e.g. blocking ``delay()`` inside a C++ lambda while-loop).
-
-Always add a firmware contract when fixing a bug that lived only in C++
-script/lambda code. Add simulator E2E when fixing schedule/state-machine logic.
+2. **Firmware contracts** (`firmware_contract.py`) — static checks on remaining
+   ESPHome YAML (NVS policy, blocking lambda patterns).
 """
 
 from __future__ import annotations
@@ -26,9 +22,20 @@ from datetime import datetime
 from typing import Iterable, Optional
 from zoneinfo import ZoneInfo
 
-from tests.controller.config import ControllerConfig, ZoneConfig
+from nedorachio.controller import ControllerSimulator
+from nedorachio.models import (
+    BackgroundActivity,
+    EventType,
+    OperationalConfig,
+    OperationalZoneConfig,
+    SimEvent,
+)
+
 from tests.controller.mock_sensors import MockFlow, MockPressure, MockTime
-from tests.controller.simulator import BackgroundActivity, ControllerSimulator, EventType, SimEvent
+
+
+ControllerConfig = OperationalConfig
+ZoneConfig = OperationalZoneConfig
 
 
 def dt_epoch(
@@ -126,7 +133,7 @@ class IrrigationHarness:
     @classmethod
     def production_gallons(cls, zones: int = 4, **overrides) -> "IrrigationHarness":
         """
-        Match ``homeassistant/packages/nedorachio_config.yaml`` defaults.
+        Match ``homeassistant/packages/nedorachio.yaml`` config profile defaults.
 
         Uses compressed timings where safe (2-min cooldown, smaller gallon targets)
         but keeps ``schedule_mode=gallons`` and the overnight watering window so

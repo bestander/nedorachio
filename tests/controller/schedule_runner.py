@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from typing import Iterable, Optional
 
 from tests.controller.harness import IrrigationHarness, dt_epoch
-from tests.controller.simulator import EventType
+from nedorachio.models import EventType
 
 
 @dataclass(frozen=True)

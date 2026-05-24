@@ -1,0 +1,32 @@
+# Irrigation config profile — edit before flashing (valid JSON).
+# Reflash after changes; not synced from Home Assistant.
+
+nedorachio:
+  config_profile: |
+    {
+      "version": 1,
+      "global": {
+        "watering_window": {
+          "start": "23:00",
+          "end": "09:00",
+          "timezone": "America/New_York"
+        },
+        "rain_accumulation_threshold_mm_48h": 5,
+        "rain_accumulation_hold_hours_after_threshold": 24,
+        "attempt_cooldown_minutes": 20,
+        "maximum_runtime_minutes": 60,
+        "no_flow_grace_seconds": 60,
+        "no_flow_sustain_seconds": 30,
+        "blackout": { "weekdays": ["thu", "fri"] }
+      },
+      "zones": {
+        "1": { "enabled": true, "mode": "gallons_target", "goal_gallons_per_cycle": 400, "cycle_gallons": 200, "soak_minutes": 15, "minimum_interval_hours": 24, "start_minimum_psi": 35, "start_maximum_psi": 85, "minimum_running_psi": 20, "minimum_running_psi_grace_seconds": 60, "minimum_flow_gpm": 0.2, "maximum_flow_gpm": 12.0 },
+        "2": { "enabled": true, "mode": "gallons_target", "goal_gallons_per_cycle": 400, "cycle_gallons": 200, "soak_minutes": 15, "minimum_interval_hours": 24, "start_minimum_psi": 35, "start_maximum_psi": 85, "minimum_running_psi": 20, "minimum_running_psi_grace_seconds": 60, "minimum_flow_gpm": 0.2, "maximum_flow_gpm": 12.0 },
+        "3": { "enabled": true, "mode": "gallons_target", "goal_gallons_per_cycle": 400, "cycle_gallons": 200, "soak_minutes": 15, "minimum_interval_hours": 24, "start_minimum_psi": 35, "start_maximum_psi": 85, "minimum_running_psi": 20, "minimum_running_psi_grace_seconds": 60, "minimum_flow_gpm": 0.2, "maximum_flow_gpm": 12.0 },
+        "4": { "enabled": true, "mode": "gallons_target", "goal_gallons_per_cycle": 400, "cycle_gallons": 200, "soak_minutes": 15, "minimum_interval_hours": 24, "start_minimum_psi": 35, "start_maximum_psi": 85, "minimum_running_psi": 20, "minimum_running_psi_grace_seconds": 60, "minimum_flow_gpm": 0.2, "maximum_flow_gpm": 12.0 },
+        "5": { "enabled": false, "mode": "gallons_target", "goal_gallons_per_cycle": 100, "cycle_gallons": 50, "soak_minutes": 15, "minimum_interval_hours": 72, "start_minimum_psi": 35, "start_maximum_psi": 85, "minimum_running_psi": 20, "minimum_running_psi_grace_seconds": 60, "minimum_flow_gpm": 0.2, "maximum_flow_gpm": 12.0 },
+        "6": { "enabled": false, "mode": "gallons_target", "goal_gallons_per_cycle": 100, "cycle_gallons": 50, "soak_minutes": 15, "minimum_interval_hours": 72, "start_minimum_psi": 35, "start_maximum_psi": 85, "minimum_running_psi": 20, "minimum_running_psi_grace_seconds": 60, "minimum_flow_gpm": 0.2, "maximum_flow_gpm": 12.0 },
+        "7": { "enabled": false, "mode": "gallons_target", "goal_gallons_per_cycle": 100, "cycle_gallons": 50, "soak_minutes": 15, "minimum_interval_hours": 72, "start_minimum_psi": 35, "start_maximum_psi": 85, "minimum_running_psi": 20, "minimum_running_psi_grace_seconds": 60, "minimum_flow_gpm": 0.2, "maximum_flow_gpm": 12.0 },
+        "8": { "enabled": false, "mode": "gallons_target", "goal_gallons_per_cycle": 100, "cycle_gallons": 50, "soak_minutes": 15, "minimum_interval_hours": 72, "start_minimum_psi": 35, "start_maximum_psi": 85, "minimum_running_psi": 20, "minimum_running_psi_grace_seconds": 60, "minimum_flow_gpm": 0.2, "maximum_flow_gpm": 12.0 }
+      }
+    }

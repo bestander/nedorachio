@@ -1,12 +1,8 @@
 """
-Static checks on firmware YAML — catches bugs the Python simulator cannot model.
+Static checks on firmware YAML — catches ESP-specific anti-patterns in remaining packages.
 
-The simulator uses cooperative generators (`yield from _delay(1)`), so it never
-reproduces ESPHome anti-patterns like `delay()` inside a C++ lambda while-loop
-(that starves the ESP32 main loop and causes reboots ~20–30s into a run).
-
-These contracts read the real firmware sources and fail CI when forbidden patterns
-return or required recovery wiring is removed.
+Legacy lambda engine packages (05-engine, 06-schedule, …) were removed; schedule logic
+lives in the C++ nedorachio component and is tested via the Python canonical library.
 """
 
 from __future__ import annotations
@@ -16,103 +12,11 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 FIRMWARE = REPO_ROOT / "firmware" / "packages"
+FIRMWARE_COMPONENT_CPP = REPO_ROOT / "firmware" / "components" / "nedorachio"
 
 
 def _read(name: str) -> str:
     return (FIRMWARE / name).read_text(encoding="utf-8")
-
-
-def _extract_script_block(yaml_text: str, script_id: str) -> str:
-    """Return the YAML body of `- id: <script_id>` through the next `- id:` script."""
-    pattern = rf"- id: {re.escape(script_id)}\n(.*?)(?=\n  - id: |\nscript:|\nbinary_sensor:|\nbutton:|\ninterval:|\nglobals:|\Z)"
-    match = re.search(pattern, yaml_text, re.DOTALL)
-    if not match:
-        raise AssertionError(f"Script {script_id!r} not found in firmware YAML")
-    return match.group(1)
-
-
-def _lambda_bodies(block: str) -> list[str]:
-    bodies: list[str] = []
-    for match in re.finditer(r"lambda:\s*\|-\n((?:          .*\n?)*)", block):
-        raw = match.group(1)
-        lines = [ln[10:] if ln.startswith("          ") else ln for ln in raw.splitlines()]
-        bodies.append("\n".join(lines))
-    for match in re.finditer(r"lambda:\s*'([^']+)'", block):
-        bodies.append(match.group(1))
-    return bodies
-
-
-def check_gallons_target_has_no_blocking_delay_loop() -> list[str]:
-    """
-    `run_one_zone_gallons_target` must not use delay() inside a C++ while in lambda.
-
-    Use script `while:` + `delay: 1s` steps instead (see run_one_zone minutes mode).
-    """
-    engine = _read("05-engine.yaml")
-    block = _extract_script_block(engine, "run_one_zone_gallons_target")
-    violations: list[str] = []
-    for i, body in enumerate(_lambda_bodies(block)):
-        if re.search(r"\bwhile\s*\(", body) and re.search(r"\bdelay\s*\(", body):
-            violations.append(
-                f"run_one_zone_gallons_target lambda #{i + 1} combines while() and delay() "
-                "(blocks ESP32 main loop — use script while + delay: 1s)"
-            )
-    return violations
-
-
-def check_schedule_clears_recoverable_alarms_before_preflight() -> list[str]:
-    schedule = _read("06-schedule.yaml")
-    block = _extract_script_block(schedule, "schedule_fire_handler")
-    if "clear_recoverable_alarms" not in block:
-        return ["schedule_fire_handler must call clear_recoverable_alarms before pre-flight"]
-    pre_idx = block.find("run_pre_flight")
-    clear_idx = block.find("clear_recoverable_alarms")
-    if clear_idx < 0 or pre_idx < 0 or clear_idx > pre_idx:
-        return ["clear_recoverable_alarms must run before run_pre_flight in schedule_fire_handler"]
-    return []
-
-
-def check_recoverable_cancels_do_not_latch() -> list[str]:
-    """Only phantom flow may set any_alarm_latched from mid-run / safety checks."""
-    engine = _read("05-engine.yaml")
-    violations: list[str] = []
-
-    # Pre-flight must not latch (recoverable skips retry via cooldown).
-    preflight = _extract_script_block(engine, "run_pre_flight")
-    if "any_alarm_latched) = true" in preflight.replace(" ", ""):
-        violations.append("run_pre_flight must not set any_alarm_latched")
-
-    # Mid-run cancel block: count latch assignments; expect exactly one (phantom).
-    interval_match = re.search(
-        r"interval:\s*\n\s*- interval: 1s\s*\n\s*then:(.*?)(?=\n  - interval:|\Z)",
-        engine,
-        re.DOTALL,
-    )
-    if not interval_match:
-        violations.append("Could not locate 1s safety interval in 05-engine.yaml")
-        return violations
-
-    safety = interval_match.group(1)
-    latch_lines = [
-        ln.strip()
-        for ln in safety.splitlines()
-        if "any_alarm_latched" in ln and "= true" in ln
-    ]
-    if len(latch_lines) != 1:
-        violations.append(
-            f"Expected exactly one any_alarm_latched = true in 1s safety interval "
-            f"(phantom flow only), found {len(latch_lines)}: {latch_lines}"
-        )
-    elif "phantom" not in safety.lower() and "alarm_phantom_flow" not in safety:
-        violations.append("The sole any_alarm_latched assignment should be for phantom flow")
-    return violations
-
-
-def check_clear_recoverable_alarms_script_exists() -> list[str]:
-    engine = _read("05-engine.yaml")
-    if "- id: clear_recoverable_alarms" not in engine:
-        return ["Missing clear_recoverable_alarms script in 05-engine.yaml"]
-    return []
 
 
 def check_no_nvs_persistence() -> list[str]:
@@ -127,52 +31,86 @@ def check_no_nvs_persistence() -> list[str]:
     return violations
 
 
-def check_gallons_target_caps_final_chunk_at_goal() -> list[str]:
-    """Final chunk must not deliver a full cycle_gallons past run_goal_gallons."""
-    engine = _read("05-engine.yaml")
-    block = _extract_script_block(engine, "run_one_zone_gallons_target")
-    if "chunk_limit" not in block or "remaining" not in block:
-        return ["run_one_zone_gallons_target must cap chunk size to remaining goal gallons"]
-    if "run_base_gallons" not in block:
-        return ["run_one_zone_gallons_target must use run_base_gallons for pulse accounting"]
+def check_no_blocking_delay_in_lambda_while() -> list[str]:
+    """Remaining calibration lambdas must not block the main loop."""
+    violations: list[str] = []
+    for path in sorted(FIRMWARE.glob("*.yaml")):
+        text = path.read_text(encoding="utf-8")
+        for match in re.finditer(r"lambda:\s*\|-\n((?:          .*\n?)*)", text):
+            body = match.group(1)
+            lines = [ln[10:] if ln.startswith("          ") else ln for ln in body.splitlines()]
+            joined = "\n".join(lines)
+            if re.search(r"\bwhile\s*\(", joined) and re.search(r"\bdelay\s*\(", joined):
+                violations.append(
+                    f"{path.name}: lambda combines while() and delay() (blocks ESP32 main loop)"
+                )
+    return violations
+
+
+def check_component_package_present() -> list[str]:
+    if not (FIRMWARE / "10-nedorachio-component.yaml").is_file():
+        return ["Missing firmware/packages/10-nedorachio-component.yaml"]
     return []
 
 
-def check_gallons_target_stamps_cadence_on_complete() -> list[str]:
-    engine = _read("05-engine.yaml")
-    block = _extract_script_block(engine, "run_one_zone_gallons_target")
-    if "stamp_zone_last_finished" not in block:
-        return ["run_one_zone_gallons_target must call stamp_zone_last_finished on successful completion"]
+def check_config_profile_package_present() -> list[str]:
+    path = FIRMWARE / "11-config-profile.yaml"
+    if not path.is_file():
+        return ["Missing firmware/packages/11-config-profile.yaml"]
+    text = path.read_text(encoding="utf-8")
+    if "config_profile:" not in text:
+        return ["11-config-profile.yaml must define nedorachio.config_profile"]
     return []
 
 
-def check_plan_readout_frozen_while_running() -> list[str]:
-    schedule = _read("06-schedule.yaml")
-    plan_match = re.search(
-        r"interval:\s*30s\s*\n\s*then:(.*?)(?=\n  - interval: 60s|\Z)",
-        schedule,
-        re.DOTALL,
-    )
-    if not plan_match:
-        return ["Could not locate 30s plan interval in 06-schedule.yaml"]
-    block = plan_match.group(1)
-    zero_idx = block.find("zone_1_scheduled_next_epoch) = 0")
-    run_idx = block.find("currently_on_zone")
-    if zero_idx < 0 or run_idx < 0 or run_idx > zero_idx:
-        return ["30s plan must return before clearing scheduled times when a zone is running"]
-    return []
+def check_fallback_schedule_switch_reflects_engine() -> list[str]:
+    text = _read("10-nedorachio-component.yaml")
+    violations: list[str] = []
+    if "id: fallback_schedule_enabled" not in text:
+        violations.append("Missing fallback_schedule_enabled switch")
+        return violations
+    block = text.split("id: fallback_schedule_enabled", 1)[1].split("\n  - platform:", 1)[0]
+    if "optimistic: false" not in block:
+        violations.append("fallback_schedule_enabled must use optimistic: false")
+    if "fallback_schedule_enabled();" not in block:
+        violations.append("fallback_schedule_enabled must lambda-read id(irrigation).fallback_schedule_enabled()")
+    if "restore_mode: DISABLED" not in block:
+        violations.append("fallback_schedule_enabled must use restore_mode: DISABLED (no NVS)")
+    return violations
+
+
+def check_component_loads_config_profile_from_yaml() -> list[str]:
+    """Config sync removed — profile is baked in at flash time via config_profile YAML field."""
+    violations: list[str] = []
+    cpp = (FIRMWARE_COMPONENT_CPP / "nedorachio_component.cpp").read_text(encoding="utf-8")
+    header = (FIRMWARE_COMPONENT_CPP / "nedorachio_component.h").read_text(encoding="utf-8")
+    init_py = (FIRMWARE_COMPONENT_CPP / "__init__.py").read_text(encoding="utf-8")
+
+    if "apply_config_profile_" not in cpp:
+        violations.append("nedorachio_component.cpp must apply config_profile at setup")
+    if "on_config_chunk" in cpp or "on_config_chunk" in header:
+        violations.append("component must not implement config chunk assembly")
+    if "on_config_json" in cpp or "on_config_json" in header:
+        violations.append("component must not accept runtime config JSON from HA text entity")
+    if "set_config_profile" not in header:
+        violations.append("nedorachio_component.h must expose set_config_profile")
+    if "CONF_CONFIG_PROFILE" not in init_py:
+        violations.append("__init__.py must define CONF_CONFIG_PROFILE")
+    if "config_text_id" in init_py:
+        violations.append("__init__.py must not reference config_text_id")
+    if "cv.Required(CONF_CONFIG_PROFILE)" not in init_py:
+        violations.append("__init__.py must require config_profile in schema")
+    return violations
 
 
 def all_firmware_contract_violations() -> list[str]:
     checks = [
-        check_gallons_target_has_no_blocking_delay_loop,
-        check_gallons_target_caps_final_chunk_at_goal,
-        check_gallons_target_stamps_cadence_on_complete,
-        check_plan_readout_frozen_while_running,
-        check_clear_recoverable_alarms_script_exists,
-        check_schedule_clears_recoverable_alarms_before_preflight,
-        check_recoverable_cancels_do_not_latch,
+        check_component_package_present,
+        check_config_profile_package_present,
+        check_fallback_schedule_switch_reflects_engine,
+        check_component_loads_config_profile_from_yaml,
         check_no_nvs_persistence,
+        check_no_blocking_delay_in_lambda_while,
     ]
     violations: list[str] = []
     for check in checks:

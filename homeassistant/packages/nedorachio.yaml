@@ -1,796 +1,118 @@
-# Nedorachio Home Assistant package: weather feeder, notifications, dashboard.
+# Nedorachio — Home Assistant package.
 #
-# Copy this file into your HA config under `packages/`. Make sure your
-# `configuration.yaml` has:
+# Copy into packages/ (only two files):
+#   nedorachio.yaml
+#   nedorachio-dashboard.yaml
 #
-#   homeassistant:
-#     packages: !include_dir_named packages
+# Irrigation config lives in firmware/packages/11-config-profile.yaml (edit before flash).
+# Zone last-watering times are input_text helpers (epoch seconds). The ESP reads them
+# on connect and writes them back after watering.
 #
-# Replace `weather.your_local_forecast` with your actual weather entity.
-# Replace `sensor.rain_observed_48h` with whatever observed-rain sensor you
-# have. If you don't have one, leave the template — it falls back to 0 and
-# the device's rain-sensor + static-pressure gates still protect the system.
+# Requires: homeassistant: packages: !include_dir_named packages
 
-automation:
-  - id: nedorachio_weather_feeder
-    alias: "Nedorachio: push 48h rain to controller"
-    trigger:
-      - platform: time_pattern
-        minutes: "/10"
-    action:
-      - variables:
-          rain_mm: >-
-            {% set obs_id = 'sensor.rain_observed_48h' %}
-            {% if states(obs_id) not in ['unknown','unavailable','none', None] %}
-              {{ states(obs_id) | float(0) }}
-            {% else %}
-              0.0
-            {% endif %}
-          current_mm: >-
-            {{ states('number.nedorachio_irrigation_controller_rain_mm_last_48h') | float(-1) }}
-      - condition: template
-        value_template: "{{ (rain_mm | float(0)) != (current_mm | float(-1)) }}"
-      - service: number.set_value
-        target:
-          entity_id: number.nedorachio_irrigation_controller_rain_mm_last_48h
-        data:
-          value: "{{ rain_mm }}"
-
-  - id: nedorachio_log_schedule_gate
-    alias: "Nedorachio: log schedule gate reason"
-    mode: queued
-    max: 20
-    trigger:
-      - platform: state
-        entity_id: sensor.nedorachio_irrigation_controller_last_schedule_gate_reason
-    condition:
-      - condition: template
-        value_template: >-
-          {% set r = trigger.to_state.state %}
-          {{ r not in ['none', 'nothing_due', 'unknown', 'unavailable', ''] }}
-      - condition: template
-        value_template: "{{ trigger.to_state.state != trigger.from_state.state }}"
-    action:
-      - service: logbook.log
-        data:
-          name: Nedorachio
-          message: >-
-            Schedule did not start: {{ trigger.to_state.state | replace('_', ' ') }}
-            {% set z = states('sensor.nedorachio_irrigation_controller_schedule_gate_due_zone') | int(0) %}
-            {% if z > 0 %}(zone {{ z }} due){% endif %}.
-            Phase {{ states('sensor.nedorachio_irrigation_controller_current_phase') }}.
-          entity_id: sensor.nedorachio_irrigation_controller_next_due_zone
-
-  - id: nedorachio_log_preflight_block
-    alias: "Nedorachio: log pre-flight block"
-    mode: queued
-    max: 20
-    trigger:
-      - platform: state
-        entity_id: sensor.nedorachio_irrigation_controller_last_pre_flight_failure_reason
-    condition:
-      - condition: template
-        value_template: >-
-          {% set r = trigger.to_state.state %}
-          {{ r not in ['none', 'unknown', 'unavailable', ''] }}
-      - condition: template
-        value_template: "{{ trigger.to_state.state != trigger.from_state.state }}"
-    action:
-      - service: logbook.log
-        data:
-          name: Nedorachio
-          message: >-
-            Pre-flight blocked run: {{ trigger.to_state.state | replace('_', ' ') }}.
-            Next due zone {{ states('sensor.nedorachio_irrigation_controller_next_due_zone') }}.
-            Phase {{ states('sensor.nedorachio_irrigation_controller_current_phase') }}.
-            {% if trigger.to_state.state == 'alarm_latched' %}
-            Phantom flow is latched — clear fault after the leak is resolved.
-            {% endif %}
-            PSI {{ states('sensor.nedorachio_irrigation_controller_pressure') }},
-            rain 48h {{ states('number.nedorachio_irrigation_controller_rain_mm_last_48h') }} mm.
-          entity_id: sensor.nedorachio_irrigation_controller_last_pre_flight_failure_reason
-
-  - id: nedorachio_log_zone_started
-    alias: "Nedorachio: log zone started"
-    trigger:
-      - platform: state
-        entity_id: sensor.nedorachio_irrigation_controller_currently_running_zone
-    condition:
-      - condition: template
-        value_template: "{{ trigger.to_state.state | int(0) > 0 }}"
-      - condition: template
-        value_template: "{{ trigger.from_state.state | int(0) == 0 }}"
-    action:
-      - service: logbook.log
-        data:
-          name: Nedorachio
-          message: >-
-            Zone {{ trigger.to_state.state }} valve opened.
-            Phase {{ states('sensor.nedorachio_irrigation_controller_current_phase') }}.
-          entity_id: sensor.nedorachio_irrigation_controller_currently_running_zone
-
-  - id: nedorachio_log_zone_finished
-    alias: "Nedorachio: log zone finished"
-    trigger:
-      - platform: state
-        entity_id: sensor.nedorachio_irrigation_controller_currently_running_zone
-    condition:
-      - condition: template
-        value_template: "{{ trigger.to_state.state | int(0) == 0 }}"
-      - condition: template
-        value_template: "{{ trigger.from_state.state | int(0) > 0 }}"
-    action:
-      - service: logbook.log
-        data:
-          name: Nedorachio
-          message: >-
-            Zone {{ trigger.from_state.state }} valve closed.
-            Outcome {{ states('sensor.nedorachio_irrigation_controller_last_run_outcome') }}.
-          entity_id: sensor.nedorachio_irrigation_controller_last_run_outcome
-
-  - id: nedorachio_alarm_notify
-    alias: "Nedorachio: alarm notifications"
-    mode: parallel
-    trigger:
-      - platform: state
-        entity_id:
-          - binary_sensor.nedorachio_irrigation_controller_alarm_no_flow
-          - binary_sensor.nedorachio_irrigation_controller_alarm_high_flow
-          - binary_sensor.nedorachio_irrigation_controller_alarm_phantom_flow
-          - binary_sensor.nedorachio_irrigation_controller_alarm_low_pressure
-          - binary_sensor.nedorachio_irrigation_controller_alarm_high_pressure
-          - binary_sensor.nedorachio_irrigation_controller_alarm_pre_flight_failed
-          - binary_sensor.nedorachio_irrigation_controller_alarm_runtime_exceeded
-        to: "on"
-    action:
-      - variables:
-          alarm_name: "{{ trigger.to_state.attributes.friendly_name }}"
-          zone: "{{ states('sensor.nedorachio_irrigation_controller_currently_running_zone') }}"
-          phase: "{{ states('sensor.nedorachio_irrigation_controller_current_phase') }}"
-          preflight_reason: "{{ states('sensor.nedorachio_irrigation_controller_last_pre_flight_failure_reason') }}"
-          psi: "{{ states('sensor.nedorachio_irrigation_controller_pressure') }}"
-          gpm: "{{ states('sensor.nedorachio_irrigation_controller_flow_rate_gpm') }}"
-      # Replace `notify.notify` with your actual notify target,
-      # e.g. `notify.mobile_app_yourphone`.
-      - service: notify.notify
-        data:
-          title: "Nedorachio: {{ alarm_name }}"
-          message: >-
-            Phase {{ phase }}, zone {{ zone }}.
-            Pre-flight reason {{ preflight_reason }}.
-            PSI {{ psi }}, flow {{ gpm }} gpm.
-
-  - id: nedorachio_apply_profile_on_start
-    alias: "Nedorachio: apply config profile on start"
-    trigger:
-      - platform: homeassistant
-        event: start
-    condition:
-      - condition: template
-        value_template: >-
-          {{ states('sensor.nedorachio_irrigation_controller_currently_running_zone') | int(0) == 0
-             or states('sensor.nedorachio_irrigation_controller_currently_running_zone') in ['unavailable', 'unknown'] }}
-    action:
-      - delay: "00:00:15"
-      - service: script.nedorachio_sync_controller
-
-  - id: nedorachio_apply_profile_on_reload
-    alias: "Nedorachio: apply config profile on reload"
-    trigger:
-      - platform: event
-        event_type: automation_reloaded
-    condition:
-      - condition: template
-        value_template: >-
-          {{ states('sensor.nedorachio_irrigation_controller_currently_running_zone') | int(0) == 0 }}
-    action:
-      - service: script.nedorachio_refresh_controller
-
-  - id: nedorachio_apply_profile_on_connect
-    alias: "Nedorachio: apply config profile after controller reconnect"
-    trigger:
-      - platform: state
-        entity_id: binary_sensor.nedorachio_irrigation_controller_time_synced
-        to: "on"
-    condition:
-      - condition: template
-        value_template: >-
-          {{ states('sensor.nedorachio_irrigation_controller_currently_running_zone') | int(0) == 0 }}
-    action:
-      - delay: "00:00:10"
-      - service: script.nedorachio_sync_controller
-
-  - id: nedorachio_reconcile_on_run_complete
-    alias: "Nedorachio: reconcile cadence after run completes"
-    trigger:
-      - platform: state
-        entity_id: sensor.nedorachio_irrigation_controller_last_run_outcome
-        to: "completed"
-    condition:
-      - condition: template
-        value_template: >-
-          {{ states('sensor.nedorachio_irrigation_controller_currently_running_zone') | int(0) == 0 }}
-    action:
-      - delay: "00:00:10"
-      - service: script.nedorachio_reconcile_cadence
-
-  - id: nedorachio_reconcile_periodic
-    alias: "Nedorachio: periodic cadence reconcile"
-    trigger:
-      - platform: time_pattern
-        minutes: "5"
-        hours: "/1"
-    condition:
-      - condition: state
-        entity_id: binary_sensor.nedorachio_irrigation_controller_time_synced
-        state: "on"
-      - condition: template
-        value_template: >-
-          {{ states('sensor.nedorachio_irrigation_controller_currently_running_zone') | int(0) == 0 }}
-    action:
-      - service: script.nedorachio_reconcile_cadence
-
-  - id: nedorachio_reconcile_after_run
-    alias: "Nedorachio: reconcile cadence after zone run stats update"
-    trigger:
-      - platform: state
-        entity_id:
-          - sensor.nedorachio_irrigation_controller_zone_1_last_gallons
-          - sensor.nedorachio_irrigation_controller_zone_2_last_gallons
-          - sensor.nedorachio_irrigation_controller_zone_3_last_gallons
-          - sensor.nedorachio_irrigation_controller_zone_4_last_gallons
-          - sensor.nedorachio_irrigation_controller_zone_5_last_gallons
-          - sensor.nedorachio_irrigation_controller_zone_6_last_gallons
-          - sensor.nedorachio_irrigation_controller_zone_7_last_gallons
-          - sensor.nedorachio_irrigation_controller_zone_8_last_gallons
-          - sensor.nedorachio_irrigation_controller_zone_1_last_run_at
-          - sensor.nedorachio_irrigation_controller_zone_2_last_run_at
-          - sensor.nedorachio_irrigation_controller_zone_3_last_run_at
-          - sensor.nedorachio_irrigation_controller_zone_4_last_run_at
-          - sensor.nedorachio_irrigation_controller_zone_5_last_run_at
-          - sensor.nedorachio_irrigation_controller_zone_6_last_run_at
-          - sensor.nedorachio_irrigation_controller_zone_7_last_run_at
-          - sensor.nedorachio_irrigation_controller_zone_8_last_run_at
-    condition:
-      - condition: template
-        value_template: >-
-          {{ states('sensor.nedorachio_irrigation_controller_currently_running_zone') | int(0) == 0 }}
-    action:
-      - delay: "00:00:05"
-      - service: script.nedorachio_reconcile_cadence
-
-  - id: nedorachio_apply_profile_on_change
-    alias: "Nedorachio: apply config profile on profile change"
-    trigger:
-      - platform: state
-        entity_id: sensor.nedorachio_config_profile
-        attribute: profile
-    condition:
-      - condition: template
-        value_template: >-
-          {{ states('sensor.nedorachio_irrigation_controller_currently_running_zone') | int(0) == 0
-             or states('sensor.nedorachio_irrigation_controller_currently_running_zone') in ['unavailable', 'unknown'] }}
-    action:
-      - service: script.nedorachio_apply_config_profile
-
-script:
-  nedorachio_sync_controller:
-    alias: "Nedorachio: restore, reconcile, apply config (sequential)"
-    description: >-
-      Runs restore → reconcile → apply in order so cadence repair sees restored
-      state and the device plan refreshes after last_finished is corrected.
-    mode: single
-    sequence:
-      - service: script.nedorachio_restore_persisted_state
-      - service: script.nedorachio_reconcile_cadence
-      - service: script.nedorachio_apply_config_profile
-
-  nedorachio_refresh_controller:
-    alias: "Nedorachio: reconcile and apply config (sequential)"
-    mode: single
-    sequence:
-      - service: script.nedorachio_reconcile_cadence
-      - service: script.nedorachio_apply_config_profile
-
-  nedorachio_apply_config_profile:
-    alias: "Nedorachio: apply config profile"
-    mode: single
-    sequence:
-      - wait_template:
-          timeout: 120
-          value_template: >-
-            {{ states('binary_sensor.nedorachio_irrigation_controller_time_synced')
-               not in ['unavailable', 'unknown'] }}
-      - condition: template
-        value_template: >-
-          {{ states('sensor.nedorachio_irrigation_controller_currently_running_zone') | int(0) == 0 }}
-      - variables:
-          cfg: "{{ (state_attr('sensor.nedorachio_config_profile', 'profile') | default('{}', true)) | from_json }}"
-      - if:
-          - condition: template
-            value_template: "{{ cfg is mapping and cfg.get('zones') is mapping and cfg.get('global') is mapping }}"
-        then:
-          - variables:
-              start_parts: "{{ (cfg.global.watering_window.start | default('00:00')).split(':') }}"
-              end_parts: "{{ (cfg.global.watering_window.end | default('08:00')).split(':') }}"
-              weekdays: "{{ cfg.global.blackout.weekdays | default([], true) }}"
-              blackout_mask: >-
-                {% set ns = namespace(mask=0) %}
-                {% set idx = {'mon':0,'tue':1,'wed':2,'thu':3,'fri':4,'sat':5,'sun':6} %}
-                {% for d in weekdays %}
-                  {% set i = idx.get((d|string)|lower) %}
-                  {% if i is not none %}
-                    {% set ns.mask = ns.mask + (2 ** i) %}
-                  {% endif %}
-                {% endfor %}
-                {{ ns.mask }}
-              zone_mask: >-
-                {% set ns = namespace(mask=0) %}
-                {% for zid in range(1, 9) %}
-                  {% set z = cfg.zones.get(zid|string, {}) %}
-                  {% if z.get('enabled', false) %}
-                    {% set ns.mask = ns.mask + (2 ** (zid - 1)) %}
-                  {% endif %}
-                {% endfor %}
-                {{ ns.mask }}
-          - service: number.set_value
-            target:
-              entity_id: number.nedorachio_irrigation_controller_schedule_start_hour
-            data:
-              value: "{{ start_parts[0] | int(0) }}"
-          - service: number.set_value
-            target:
-              entity_id: number.nedorachio_irrigation_controller_schedule_start_minute
-            data:
-              value: "{{ start_parts[1] | int(0) }}"
-          - service: number.set_value
-            target:
-              entity_id: number.nedorachio_irrigation_controller_schedule_end_hour
-            data:
-              value: "{{ end_parts[0] | int(8) }}"
-          - service: number.set_value
-            target:
-              entity_id: number.nedorachio_irrigation_controller_schedule_end_minute
-            data:
-              value: "{{ end_parts[1] | int(0) }}"
-          - service: number.set_value
-            target:
-              entity_id: number.nedorachio_irrigation_controller_attempt_cooldown_minutes
-            data:
-              value: "{{ cfg.global.attempt_cooldown_minutes | default(20) | float(20) }}"
-          - service: number.set_value
-            target:
-              entity_id: number.nedorachio_irrigation_controller_rain_mm_threshold_48h
-            data:
-              value: "{{ cfg.global.rain_accumulation_threshold_mm_48h | default(5) | float(5) }}"
-          - service: number.set_value
-            target:
-              entity_id: number.nedorachio_irrigation_controller_rain_hold_hours_after_forecast
-            data:
-              value: "{{ cfg.global.rain_accumulation_hold_hours_after_threshold | default(24) | float(24) }}"
-          - service: number.set_value
-            target:
-              entity_id: number.nedorachio_irrigation_controller_maximum_runtime_minutes
-            data:
-              value: "{{ cfg.global.maximum_runtime_minutes | default(60) | float(60) }}"
-          - service: number.set_value
-            target:
-              entity_id: number.nedorachio_irrigation_controller_no_flow_grace_s
-            data:
-              value: "{{ cfg.global.no_flow_grace_seconds | default(60) | float(60) }}"
-          - service: number.set_value
-            target:
-              entity_id: number.nedorachio_irrigation_controller_no_flow_sustain_s
-            data:
-              value: "{{ cfg.global.no_flow_sustain_seconds | default(30) | float(30) }}"
-          - service: number.set_value
-            target:
-              entity_id: number.nedorachio_irrigation_controller_blackout_weekday_bitmask
-            data:
-              value: "{{ blackout_mask | int(0) }}"
-          - service: number.set_value
-            target:
-              entity_id: number.nedorachio_irrigation_controller_zones_enabled_bitmask
-            data:
-              value: "{{ zone_mask | int(0) }}"
-          - delay: "00:00:02"
-          - repeat:
-              for_each: "{{ range(1, 9) | list }}"
-              sequence:
-                - variables:
-                    zid: "{{ repeat.item }}"
-                    z: "{{ cfg.zones.get((repeat.item|string), {}) }}"
-                    mode_value: "{{ 1 if (z.get('mode', 'gallons_target') == 'gallons_target') else 0 }}"
-                - service: number.set_value
-                  target:
-                    entity_id: "{{ 'number.nedorachio_irrigation_controller_zone_' ~ zid ~ '_schedule_mode' }}"
-                  data:
-                    value: "{{ mode_value | int(1) }}"
-                - service: number.set_value
-                  target:
-                    entity_id: "{{ 'number.nedorachio_irrigation_controller_zone_' ~ zid ~ '_goal_gallons_per_cycle' }}"
-                  data:
-                    value: "{{ z.get('goal_gallons_per_cycle', 100) | float(100) }}"
-                - service: number.set_value
-                  target:
-                    entity_id: "{{ 'number.nedorachio_irrigation_controller_zone_' ~ zid ~ '_cycle_gallons' }}"
-                  data:
-                    value: "{{ z.get('cycle_gallons', 50) | float(50) }}"
-                - service: number.set_value
-                  target:
-                    entity_id: "{{ 'number.nedorachio_irrigation_controller_zone_' ~ zid ~ '_soak_minutes' }}"
-                  data:
-                    value: "{{ z.get('soak_minutes', 15) | float(15) }}"
-                - service: number.set_value
-                  target:
-                    entity_id: "{{ 'number.nedorachio_irrigation_controller_zone_' ~ zid ~ '_minimum_interval_hours' }}"
-                  data:
-                    value: "{{ z.get('minimum_interval_hours', 72) | float(72) }}"
-                - service: number.set_value
-                  target:
-                    entity_id: "{{ 'number.nedorachio_irrigation_controller_zone_' ~ zid ~ '_start_minimum_psi' }}"
-                  data:
-                    value: "{{ z.get('start_minimum_psi', 35) | float(35) }}"
-                - service: number.set_value
-                  target:
-                    entity_id: "{{ 'number.nedorachio_irrigation_controller_zone_' ~ zid ~ '_start_maximum_psi' }}"
-                  data:
-                    value: "{{ z.get('start_maximum_psi', 85) | float(85) }}"
-                - service: number.set_value
-                  target:
-                    entity_id: "{{ 'number.nedorachio_irrigation_controller_zone_' ~ zid ~ '_minimum_running_psi' }}"
-                  data:
-                    value: "{{ z.get('minimum_running_psi', 20) | float(20) }}"
-                - service: number.set_value
-                  target:
-                    entity_id: "{{ 'number.nedorachio_irrigation_controller_zone_' ~ zid ~ '_minimum_running_psi_grace_seconds' }}"
-                  data:
-                    value: "{{ z.get('minimum_running_psi_grace_seconds', 60) | float(60) }}"
-                - service: number.set_value
-                  target:
-                    entity_id: "{{ 'number.nedorachio_irrigation_controller_zone_' ~ zid ~ '_minimum_flow_gpm' }}"
-                  data:
-                    value: "{{ z.get('minimum_flow_gpm', 0.2) | float(0.2) }}"
-                - service: number.set_value
-                  target:
-                    entity_id: "{{ 'number.nedorachio_irrigation_controller_zone_' ~ zid ~ '_maximum_flow_gpm' }}"
-                  data:
-                    value: "{{ z.get('maximum_flow_gpm', 12.0) | float(12.0) }}"
-                - service: number.set_value
-                  target:
-                    entity_id: "{{ 'number.nedorachio_irrigation_controller_zone_' ~ zid ~ '_total_minutes' }}"
-                  data:
-                    value: "{{ z.get('total_minutes', 20) | float(20) }}"
-                - service: number.set_value
-                  target:
-                    entity_id: "{{ 'number.nedorachio_irrigation_controller_zone_' ~ zid ~ '_cycle_minutes' }}"
-                  data:
-                    value: "{{ z.get('cycle_minutes', 10) | float(10) }}"
-                - delay: "00:00:01"
-
-  nedorachio_restore_persisted_state:
-    alias: "Nedorachio: restore persisted state to controller"
-    mode: single
-    sequence:
-      - wait_template:
-          timeout: 120
-          value_template: >-
-            {{ states('number.nedorachio_irrigation_controller_zone_1_last_finished_epoch')
-               not in ['unavailable', 'unknown'] }}
-      - condition: template
-        value_template: >-
-          {{ states('sensor.nedorachio_irrigation_controller_currently_running_zone') | int(0) == 0 }}
-      - variables:
-          delivered: "{{ state_attr('sensor.nedorachio_persisted_state', 'zone_cycle_delivered_gallons') | default({}, true) }}"
-          last_nc: "{{ state_attr('sensor.nedorachio_persisted_state', 'last_non_completed_attempt_epoch') | default(0) | int(0) }}"
-          rain_wet: "{{ state_attr('sensor.nedorachio_persisted_state', 'rain_sensor_last_wet_epoch') | default(0) | int(0) }}"
-          rain_fc: "{{ state_attr('sensor.nedorachio_persisted_state', 'rain_forecast_last_high_epoch') | default(0) | int(0) }}"
-          last_known: "{{ state_attr('sensor.nedorachio_persisted_state', 'last_known_epoch') | default(0) | int(0) }}"
-      - repeat:
-          for_each: "{{ range(1, 9) | list }}"
-          sequence:
-            - variables:
-                zid: "{{ repeat.item }}"
-                dg: "{{ delivered.get((repeat.item | string), 0) | float(0) }}"
-            - if:
-                - condition: template
-                  value_template: "{{ dg > 0 }}"
-              then:
-                - service: number.set_value
-                  target:
-                    entity_id: "{{ 'number.nedorachio_irrigation_controller_zone_' ~ zid ~ '_cycle_delivered_gallons' }}"
-                  data:
-                    value: "{{ dg }}"
-      - if:
-          - condition: template
-            value_template: "{{ last_nc > 0 }}"
-        then:
-          - service: number.set_value
-            target:
-              entity_id: number.nedorachio_irrigation_controller_last_non_completed_attempt_epoch
-            data:
-              value: "{{ last_nc }}"
-      - if:
-          - condition: template
-            value_template: "{{ rain_wet > 0 }}"
-        then:
-          - service: number.set_value
-            target:
-              entity_id: number.nedorachio_irrigation_controller_rain_sensor_last_wet_epoch
-            data:
-              value: "{{ rain_wet }}"
-      - if:
-          - condition: template
-            value_template: "{{ rain_fc > 0 }}"
-        then:
-          - service: number.set_value
-            target:
-              entity_id: number.nedorachio_irrigation_controller_rain_forecast_last_high_epoch
-            data:
-              value: "{{ rain_fc }}"
-      - if:
-          - condition: template
-            value_template: "{{ last_known > 0 }}"
-        then:
-          - service: number.set_value
-            target:
-              entity_id: number.nedorachio_irrigation_controller_last_known_epoch
-            data:
-              value: "{{ last_known }}"
-
-  nedorachio_reconcile_cadence:
-    alias: "Nedorachio: reconcile stale cadence timestamps"
-    description: >-
-      Fixes last_finished when a run completed but cadence was not stamped (gallons_target bug),
-      when partial cycle gallons are in progress, or when persisted timestamps are corrupt.
-    mode: single
-    sequence:
-      - wait_template:
-          timeout: 120
-          value_template: >-
-            {{ states('number.nedorachio_irrigation_controller_zone_1_last_finished_epoch')
-               not in ['unavailable', 'unknown'] }}
-      - condition: template
-        value_template: >-
-          {{ states('sensor.nedorachio_irrigation_controller_currently_running_zone') | int(0) == 0 }}
-      - variables:
-          now_ts: "{{ as_timestamp(now()) | int(0) }}"
-          outcome: "{{ states('sensor.nedorachio_irrigation_controller_last_run_outcome') }}"
-          outcome_ts: >-
-            {{ as_timestamp(states.sensor.nedorachio_irrigation_controller_last_run_outcome.last_updated)
-               | int(0) }}
-          run_started: >-
-            {{ states('sensor.nedorachio_irrigation_controller_last_run_started_at') | int(0) }}
-          last_completed: >-
-            {{ states('sensor.nedorachio_irrigation_controller_last_completed_zone') | int(0) }}
-          zone_mask: >-
-            {{ states('number.nedorachio_irrigation_controller_zones_enabled_bitmask') | int(0) }}
-      - repeat:
-          for_each: "{{ range(1, 9) | list }}"
-          sequence:
-            - variables:
-                zid: "{{ repeat.item }}"
-                enabled: "{{ ((zone_mask | int) >> (zid - 1)) & 1 == 1 }}"
-                lf: "{{ states('number.nedorachio_irrigation_controller_zone_' ~ zid ~ '_last_finished_epoch') | int(0) }}"
-                last_run: "{{ states('sensor.nedorachio_irrigation_controller_zone_' ~ zid ~ '_last_run_at') | int(0) }}"
-                delivered: "{{ states('number.nedorachio_irrigation_controller_zone_' ~ zid ~ '_cycle_delivered_gallons') | float(0) }}"
-                interval_s: "{{ (states('number.nedorachio_irrigation_controller_zone_' ~ zid ~ '_minimum_interval_hours') | float(72)) * 3600 }}"
-                next_sched: >-
-                  {{ states('sensor.nedorachio_irrigation_controller_zone_' ~ zid ~ '_scheduled_next_start_epoch') | int(0) }}
-                due_ts: "{{ (lf | int) + (interval_s | int) }}"
-                last_gallons: >-
-                  {{ states('sensor.nedorachio_irrigation_controller_zone_' ~ zid ~ '_last_gallons') | float(0) }}
-                last_gal_ts: >-
-                  {{ as_timestamp(states['sensor.nedorachio_irrigation_controller_zone_' ~ zid ~ '_last_gallons'].last_updated) | int(0) }}
-                goal_gallons: >-
-                  {{ states('number.nedorachio_irrigation_controller_zone_' ~ zid ~ '_goal_gallons_per_cycle') | float(0) }}
-                run_finish_ts: >-
-                  {{ [last_run | int, last_gal_ts | int, (run_started | int if (last_completed | int) == (zid | int) else 0)] | max | int }}
-                stale_plan: >-
-                  {{ next_sched > 0 and (next_sched - due_ts) | abs < 600 }}
-            - if:
-                - condition: template
-                  value_template: "{{ enabled }}"
-              then:
-                - choose:
-                    - conditions:
-                        - condition: template
-                          value_template: "{{ lf > (now_ts + 300) }}"
-                      sequence:
-                        - service: number.set_value
-                          target:
-                            entity_id: "{{ 'number.nedorachio_irrigation_controller_zone_' ~ zid ~ '_last_finished_epoch' }}"
-                          data:
-                            value: "{{ (now_ts | int) - (interval_s | int) - 120 }}"
-                        - service: logbook.log
-                          data:
-                            name: Nedorachio
-                            message: >-
-                              Zone {{ zid }} cadence reconciled (future last_finished {{ lf }}
-                              → {{ (now_ts | int) - (interval_s | int) - 120 }}).
-                    - conditions:
-                        - condition: template
-                          value_template: >-
-                            {{ last_run > 0 and last_run > (lf + 60) }}
-                      sequence:
-                        - service: number.set_value
-                          target:
-                            entity_id: "{{ 'number.nedorachio_irrigation_controller_zone_' ~ zid ~ '_last_finished_epoch' }}"
-                          data:
-                            value: "{{ last_run }}"
-                        - service: logbook.log
-                          data:
-                            name: Nedorachio
-                            message: >-
-                              Zone {{ zid }} cadence reconciled from last_run_at
-                              ({{ lf }} → {{ last_run }}).
-                    - conditions:
-                        - condition: template
-                          value_template: >-
-                            {{ run_finish_ts > (lf + 60)
-                               and run_finish_ts <= (now_ts + 300)
-                               and stale_plan
-                               and last_gallons > 0.05 }}
-                      sequence:
-                        - service: number.set_value
-                          target:
-                            entity_id: "{{ 'number.nedorachio_irrigation_controller_zone_' ~ zid ~ '_last_finished_epoch' }}"
-                          data:
-                            value: "{{ run_finish_ts }}"
-                        - service: logbook.log
-                          data:
-                            name: Nedorachio
-                            message: >-
-                              Zone {{ zid }} cadence reconciled from run stats
-                              ({{ last_gallons | round(1) }} gal; last_finished {{ lf }}
-                              → {{ run_finish_ts }}).
-                    - conditions:
-                        - condition: template
-                          value_template: >-
-                            {{ outcome == 'completed' and last_completed == (zid | int)
-                               and run_finish_ts > (lf + 60) }}
-                      sequence:
-                        - service: number.set_value
-                          target:
-                            entity_id: "{{ 'number.nedorachio_irrigation_controller_zone_' ~ zid ~ '_last_finished_epoch' }}"
-                          data:
-                            value: "{{ run_finish_ts }}"
-                        - service: logbook.log
-                          data:
-                            name: Nedorachio
-                            message: >-
-                              Zone {{ zid }} cadence reconciled from last completed run
-                              ({{ lf }} → {{ run_finish_ts }}).
-                    - conditions:
-                        - condition: template
-                          value_template: >-
-                            {{ delivered > 0.05 and due_ts > (now_ts | int) }}
-                      sequence:
-                        - service: number.set_value
-                          target:
-                            entity_id: "{{ 'number.nedorachio_irrigation_controller_zone_' ~ zid ~ '_last_finished_epoch' }}"
-                          data:
-                            value: "{{ (now_ts | int) - (interval_s | int) - 120 }}"
-                        - service: logbook.log
-                          data:
-                            name: Nedorachio
-                            message: >-
-                              Zone {{ zid }} cadence reconciled for partial cycle
-                              ({{ delivered | round(1) }} gal; last_finished
-                              {{ lf }} → {{ (now_ts | int) - (interval_s | int) - 120 }}).
-                    - conditions:
-                        - condition: template
-                          value_template: >-
-                            {{ next_sched > 0 and (next_sched - (now_ts | int)) > (4 * 86400) }}
-                      sequence:
-                        - service: number.set_value
-                          target:
-                            entity_id: "{{ 'number.nedorachio_irrigation_controller_zone_' ~ zid ~ '_last_finished_epoch' }}"
-                          data:
-                            value: "{{ (now_ts | int) - (interval_s | int) - 120 }}"
-                        - service: logbook.log
-                          data:
-                            name: Nedorachio
-                            message: >-
-                              Zone {{ zid }} cadence reconciled (plan {{ next_sched }} was
-                              >4 days out; last_finished {{ lf }}
-                              → {{ (now_ts | int) - (interval_s | int) - 120 }}).
-                    - conditions:
-                        - condition: template
-                          value_template: >-
-                            {{ last_completed == 0 and outcome == 'completed'
-                               and run_finish_ts > (lf + 60)
-                               and stale_plan
-                               and (run_finish_ts - lf) < (interval_s | int) }}
-                      sequence:
-                        - service: number.set_value
-                          target:
-                            entity_id: "{{ 'number.nedorachio_irrigation_controller_zone_' ~ zid ~ '_last_finished_epoch' }}"
-                          data:
-                            value: "{{ run_finish_ts }}"
-                        - service: logbook.log
-                          data:
-                            name: Nedorachio
-                            message: >-
-                              Zone {{ zid }} cadence reconciled (missed stamp fallback;
-                              {{ lf }} → {{ run_finish_ts }}).
-                    - conditions:
-                        - condition: template
-                          value_template: >-
-                            {{ next_sched > 0 and (due_ts | int) <= (now_ts | int)
-                               and (next_sched - (now_ts | int)) > 3600 }}
-                      sequence:
-                        - service: number.set_value
-                          target:
-                            entity_id: "{{ 'number.nedorachio_irrigation_controller_zone_' ~ zid ~ '_last_finished_epoch' }}"
-                          data:
-                            value: "{{ (now_ts | int) - (interval_s | int) - 120 }}"
-                        - service: logbook.log
-                          data:
-                            name: Nedorachio
-                            message: >-
-                              Zone {{ zid }} cadence reconciled (due by interval but plan showed
-                              {{ next_sched }}; last_finished {{ lf }}
-                              → {{ (now_ts | int) - (interval_s | int) - 120 }}).
-                  default: []
-      - delay: "00:00:35"
+input_text:
+  nedorachio_zone_1_last_watering:
+    name: "Nedorachio zone 1 last watering"
+    initial: "0"
+    pattern: "[0-9]*"
+    max: 16
+  nedorachio_zone_2_last_watering:
+    name: "Nedorachio zone 2 last watering"
+    initial: "0"
+    pattern: "[0-9]*"
+    max: 16
+  nedorachio_zone_3_last_watering:
+    name: "Nedorachio zone 3 last watering"
+    initial: "0"
+    pattern: "[0-9]*"
+    max: 16
+  nedorachio_zone_4_last_watering:
+    name: "Nedorachio zone 4 last watering"
+    initial: "0"
+    pattern: "[0-9]*"
+    max: 16
+  nedorachio_zone_5_last_watering:
+    name: "Nedorachio zone 5 last watering"
+    initial: "0"
+    pattern: "[0-9]*"
+    max: 16
+  nedorachio_zone_6_last_watering:
+    name: "Nedorachio zone 6 last watering"
+    initial: "0"
+    pattern: "[0-9]*"
+    max: 16
+  nedorachio_zone_7_last_watering:
+    name: "Nedorachio zone 7 last watering"
+    initial: "0"
+    pattern: "[0-9]*"
+    max: 16
+  nedorachio_zone_8_last_watering:
+    name: "Nedorachio zone 8 last watering"
+    initial: "0"
+    pattern: "[0-9]*"
+    max: 16
 
 template:
-  - trigger:
-      - platform: state
-        entity_id:
-          - number.nedorachio_irrigation_controller_zone_1_last_finished_epoch
-          - number.nedorachio_irrigation_controller_zone_2_last_finished_epoch
-          - number.nedorachio_irrigation_controller_zone_3_last_finished_epoch
-          - number.nedorachio_irrigation_controller_zone_4_last_finished_epoch
-          - number.nedorachio_irrigation_controller_zone_5_last_finished_epoch
-          - number.nedorachio_irrigation_controller_zone_6_last_finished_epoch
-          - number.nedorachio_irrigation_controller_zone_7_last_finished_epoch
-          - number.nedorachio_irrigation_controller_zone_8_last_finished_epoch
-          - number.nedorachio_irrigation_controller_zone_1_cycle_delivered_gallons
-          - number.nedorachio_irrigation_controller_zone_2_cycle_delivered_gallons
-          - number.nedorachio_irrigation_controller_zone_3_cycle_delivered_gallons
-          - number.nedorachio_irrigation_controller_zone_4_cycle_delivered_gallons
-          - number.nedorachio_irrigation_controller_zone_5_cycle_delivered_gallons
-          - number.nedorachio_irrigation_controller_zone_6_cycle_delivered_gallons
-          - number.nedorachio_irrigation_controller_zone_7_cycle_delivered_gallons
-          - number.nedorachio_irrigation_controller_zone_8_cycle_delivered_gallons
-          - number.nedorachio_irrigation_controller_last_non_completed_attempt_epoch
-          - number.nedorachio_irrigation_controller_rain_sensor_last_wet_epoch
-          - number.nedorachio_irrigation_controller_rain_forecast_last_high_epoch
-          - number.nedorachio_irrigation_controller_last_known_epoch
-    sensor:
-      - name: "Nedorachio persisted state"
-        unique_id: nedorachio_persisted_state_v1
-        state: "{{ now().timestamp() | int }}"
-        attributes:
-          version: 1
-          zone_last_finished:
-            "1": "{{ states('number.nedorachio_irrigation_controller_zone_1_last_finished_epoch') | int(0) }}"
-            "2": "{{ states('number.nedorachio_irrigation_controller_zone_2_last_finished_epoch') | int(0) }}"
-            "3": "{{ states('number.nedorachio_irrigation_controller_zone_3_last_finished_epoch') | int(0) }}"
-            "4": "{{ states('number.nedorachio_irrigation_controller_zone_4_last_finished_epoch') | int(0) }}"
-            "5": "{{ states('number.nedorachio_irrigation_controller_zone_5_last_finished_epoch') | int(0) }}"
-            "6": "{{ states('number.nedorachio_irrigation_controller_zone_6_last_finished_epoch') | int(0) }}"
-            "7": "{{ states('number.nedorachio_irrigation_controller_zone_7_last_finished_epoch') | int(0) }}"
-            "8": "{{ states('number.nedorachio_irrigation_controller_zone_8_last_finished_epoch') | int(0) }}"
-          zone_cycle_delivered_gallons:
-            "1": "{{ states('number.nedorachio_irrigation_controller_zone_1_cycle_delivered_gallons') | float(0) }}"
-            "2": "{{ states('number.nedorachio_irrigation_controller_zone_2_cycle_delivered_gallons') | float(0) }}"
-            "3": "{{ states('number.nedorachio_irrigation_controller_zone_3_cycle_delivered_gallons') | float(0) }}"
-            "4": "{{ states('number.nedorachio_irrigation_controller_zone_4_cycle_delivered_gallons') | float(0) }}"
-            "5": "{{ states('number.nedorachio_irrigation_controller_zone_5_cycle_delivered_gallons') | float(0) }}"
-            "6": "{{ states('number.nedorachio_irrigation_controller_zone_6_cycle_delivered_gallons') | float(0) }}"
-            "7": "{{ states('number.nedorachio_irrigation_controller_zone_7_cycle_delivered_gallons') | float(0) }}"
-            "8": "{{ states('number.nedorachio_irrigation_controller_zone_8_cycle_delivered_gallons') | float(0) }}"
-          last_non_completed_attempt_epoch: "{{ states('number.nedorachio_irrigation_controller_last_non_completed_attempt_epoch') | int(0) }}"
-          rain_sensor_last_wet_epoch: "{{ states('number.nedorachio_irrigation_controller_rain_sensor_last_wet_epoch') | int(0) }}"
-          rain_forecast_last_high_epoch: "{{ states('number.nedorachio_irrigation_controller_rain_forecast_last_high_epoch') | int(0) }}"
-          last_known_epoch: "{{ states('number.nedorachio_irrigation_controller_last_known_epoch') | int(0) }}"
   - sensor:
+      - name: "Nedorachio zone 1 last watering epoch"
+        unique_id: nedorachio_zone_1_last_watering_epoch_v1
+        state: "{{ states('input_text.nedorachio_zone_1_last_watering') | int(0) }}"
+      - name: "Nedorachio zone 2 last watering epoch"
+        unique_id: nedorachio_zone_2_last_watering_epoch_v1
+        state: "{{ states('input_text.nedorachio_zone_2_last_watering') | int(0) }}"
+      - name: "Nedorachio zone 3 last watering epoch"
+        unique_id: nedorachio_zone_3_last_watering_epoch_v1
+        state: "{{ states('input_text.nedorachio_zone_3_last_watering') | int(0) }}"
+      - name: "Nedorachio zone 4 last watering epoch"
+        unique_id: nedorachio_zone_4_last_watering_epoch_v1
+        state: "{{ states('input_text.nedorachio_zone_4_last_watering') | int(0) }}"
+      - name: "Nedorachio zone 5 last watering epoch"
+        unique_id: nedorachio_zone_5_last_watering_epoch_v1
+        state: "{{ states('input_text.nedorachio_zone_5_last_watering') | int(0) }}"
+      - name: "Nedorachio zone 6 last watering epoch"
+        unique_id: nedorachio_zone_6_last_watering_epoch_v1
+        state: "{{ states('input_text.nedorachio_zone_6_last_watering') | int(0) }}"
+      - name: "Nedorachio zone 7 last watering epoch"
+        unique_id: nedorachio_zone_7_last_watering_epoch_v1
+        state: "{{ states('input_text.nedorachio_zone_7_last_watering') | int(0) }}"
+      - name: "Nedorachio zone 8 last watering epoch"
+        unique_id: nedorachio_zone_8_last_watering_epoch_v1
+        state: "{{ states('input_text.nedorachio_zone_8_last_watering') | int(0) }}"
+      - name: "Nedorachio zone 1 last watered"
+        state: >-
+          {% set e = states('input_text.nedorachio_zone_1_last_watering') | int(0) %}
+          {% if e > 0 %}{{ e | timestamp_custom('%Y-%m-%d %H:%M', true) }}{% else %}never{% endif %}
+      - name: "Nedorachio zone 2 last watered"
+        state: >-
+          {% set e = states('input_text.nedorachio_zone_2_last_watering') | int(0) %}
+          {% if e > 0 %}{{ e | timestamp_custom('%Y-%m-%d %H:%M', true) }}{% else %}never{% endif %}
+      - name: "Nedorachio zone 3 last watered"
+        state: >-
+          {% set e = states('input_text.nedorachio_zone_3_last_watering') | int(0) %}
+          {% if e > 0 %}{{ e | timestamp_custom('%Y-%m-%d %H:%M', true) }}{% else %}never{% endif %}
+      - name: "Nedorachio zone 4 last watered"
+        state: >-
+          {% set e = states('input_text.nedorachio_zone_4_last_watering') | int(0) %}
+          {% if e > 0 %}{{ e | timestamp_custom('%Y-%m-%d %H:%M', true) }}{% else %}never{% endif %}
+      - name: "Nedorachio zone 5 last watered"
+        state: >-
+          {% set e = states('input_text.nedorachio_zone_5_last_watering') | int(0) %}
+          {% if e > 0 %}{{ e | timestamp_custom('%Y-%m-%d %H:%M', true) }}{% else %}never{% endif %}
+      - name: "Nedorachio zone 6 last watered"
+        state: >-
+          {% set e = states('input_text.nedorachio_zone_6_last_watering') | int(0) %}
+          {% if e > 0 %}{{ e | timestamp_custom('%Y-%m-%d %H:%M', true) }}{% else %}never{% endif %}
+      - name: "Nedorachio zone 7 last watered"
+        state: >-
+          {% set e = states('input_text.nedorachio_zone_7_last_watering') | int(0) %}
+          {% if e > 0 %}{{ e | timestamp_custom('%Y-%m-%d %H:%M', true) }}{% else %}never{% endif %}
+      - name: "Nedorachio zone 8 last watered"
+        state: >-
+          {% set e = states('input_text.nedorachio_zone_8_last_watering') | int(0) %}
+          {% if e > 0 %}{{ e | timestamp_custom('%Y-%m-%d %H:%M', true) }}{% else %}never{% endif %}
       - name: "Nedorachio last stop reason"
         state: >-
-          {% set outcome = states('sensor.nedorachio_irrigation_controller_last_run_outcome') %}
+          {% set outcome = states('text.nedorachio_irrigation_controller_last_run_outcome') %}
           {% if outcome.startswith('cancelled_') %}
             {{ outcome | replace('cancelled_', '') }}
           {% else %}
@@ -804,7 +126,6 @@ template:
           {% else %}
             no
           {% endif %}
-      # Next-run timestamps come from the controller (window + blackout + serial queue).
       - name: "Nedorachio zone 1 next run"
         device_class: timestamp
         state: >-
@@ -883,11 +204,7 @@ template:
             running now
           {% else %}
             {% set ts = as_timestamp(states('sensor.nedorachio_zone_1_next_run'), default=0) | int(0) %}
-            {% if ts <= 0 %}
-              unknown
-            {% else %}
-              {{ ts | timestamp_custom('%Y-%m-%d %H:%M', true) }}
-            {% endif %}
+            {% if ts <= 0 %}unknown{% else %}{{ ts | timestamp_custom('%Y-%m-%d %H:%M', true) }}{% endif %}
           {% endif %}
       - name: "Nedorachio zone 2 next run local"
         state: >-
@@ -895,11 +212,7 @@ template:
             running now
           {% else %}
             {% set ts = as_timestamp(states('sensor.nedorachio_zone_2_next_run'), default=0) | int(0) %}
-            {% if ts <= 0 %}
-              unknown
-            {% else %}
-              {{ ts | timestamp_custom('%Y-%m-%d %H:%M', true) }}
-            {% endif %}
+            {% if ts <= 0 %}unknown{% else %}{{ ts | timestamp_custom('%Y-%m-%d %H:%M', true) }}{% endif %}
           {% endif %}
       - name: "Nedorachio zone 3 next run local"
         state: >-
@@ -907,11 +220,7 @@ template:
             running now
           {% else %}
             {% set ts = as_timestamp(states('sensor.nedorachio_zone_3_next_run'), default=0) | int(0) %}
-            {% if ts <= 0 %}
-              unknown
-            {% else %}
-              {{ ts | timestamp_custom('%Y-%m-%d %H:%M', true) }}
-            {% endif %}
+            {% if ts <= 0 %}unknown{% else %}{{ ts | timestamp_custom('%Y-%m-%d %H:%M', true) }}{% endif %}
           {% endif %}
       - name: "Nedorachio zone 4 next run local"
         state: >-
@@ -919,11 +228,7 @@ template:
             running now
           {% else %}
             {% set ts = as_timestamp(states('sensor.nedorachio_zone_4_next_run'), default=0) | int(0) %}
-            {% if ts <= 0 %}
-              unknown
-            {% else %}
-              {{ ts | timestamp_custom('%Y-%m-%d %H:%M', true) }}
-            {% endif %}
+            {% if ts <= 0 %}unknown{% else %}{{ ts | timestamp_custom('%Y-%m-%d %H:%M', true) }}{% endif %}
           {% endif %}
       - name: "Nedorachio zone 5 next run local"
         state: >-
@@ -931,11 +236,7 @@ template:
             running now
           {% else %}
             {% set ts = as_timestamp(states('sensor.nedorachio_zone_5_next_run'), default=0) | int(0) %}
-            {% if ts <= 0 %}
-              unknown
-            {% else %}
-              {{ ts | timestamp_custom('%Y-%m-%d %H:%M', true) }}
-            {% endif %}
+            {% if ts <= 0 %}unknown{% else %}{{ ts | timestamp_custom('%Y-%m-%d %H:%M', true) }}{% endif %}
           {% endif %}
       - name: "Nedorachio zone 6 next run local"
         state: >-
@@ -943,11 +244,7 @@ template:
             running now
           {% else %}
             {% set ts = as_timestamp(states('sensor.nedorachio_zone_6_next_run'), default=0) | int(0) %}
-            {% if ts <= 0 %}
-              unknown
-            {% else %}
-              {{ ts | timestamp_custom('%Y-%m-%d %H:%M', true) }}
-            {% endif %}
+            {% if ts <= 0 %}unknown{% else %}{{ ts | timestamp_custom('%Y-%m-%d %H:%M', true) }}{% endif %}
           {% endif %}
       - name: "Nedorachio zone 7 next run local"
         state: >-
@@ -955,11 +252,7 @@ template:
             running now
           {% else %}
             {% set ts = as_timestamp(states('sensor.nedorachio_zone_7_next_run'), default=0) | int(0) %}
-            {% if ts <= 0 %}
-              unknown
-            {% else %}
-              {{ ts | timestamp_custom('%Y-%m-%d %H:%M', true) }}
-            {% endif %}
+            {% if ts <= 0 %}unknown{% else %}{{ ts | timestamp_custom('%Y-%m-%d %H:%M', true) }}{% endif %}
           {% endif %}
       - name: "Nedorachio zone 8 next run local"
         state: >-
@@ -967,212 +260,61 @@ template:
             running now
           {% else %}
             {% set ts = as_timestamp(states('sensor.nedorachio_zone_8_next_run'), default=0) | int(0) %}
-            {% if ts <= 0 %}
-              unknown
-            {% else %}
-              {{ ts | timestamp_custom('%Y-%m-%d %H:%M', true) }}
-            {% endif %}
-          {% endif %}
-      - name: "Nedorachio zone 1 last triggered ago"
-        state: >-
-          {% set ts = states('number.nedorachio_irrigation_controller_zone_1_last_finished_epoch') | int(0) %}
-          {% if ts <= 0 %}
-            unknown
-          {% else %}
-            {% set delta = (as_timestamp(now()) - ts) | int(0) %}
-            {% if delta < 60 %}
-              {{ delta }}s
-            {% elif delta < 3600 %}
-              {{ (delta // 60) }}m
-            {% elif delta < 86400 %}
-              {{ (delta // 3600) }}h {{ ((delta % 3600) // 60) }}m
-            {% else %}
-              {{ (delta // 86400) }}d {{ ((delta % 86400) // 3600) }}h
-            {% endif %}
-          {% endif %}
-      - name: "Nedorachio zone 2 last triggered ago"
-        state: >-
-          {% set ts = states('number.nedorachio_irrigation_controller_zone_2_last_finished_epoch') | int(0) %}
-          {% if ts <= 0 %}
-            unknown
-          {% else %}
-            {% set delta = (as_timestamp(now()) - ts) | int(0) %}
-            {% if delta < 60 %}
-              {{ delta }}s
-            {% elif delta < 3600 %}
-              {{ (delta // 60) }}m
-            {% elif delta < 86400 %}
-              {{ (delta // 3600) }}h {{ ((delta % 3600) // 60) }}m
-            {% else %}
-              {{ (delta // 86400) }}d {{ ((delta % 86400) // 3600) }}h
-            {% endif %}
-          {% endif %}
-      - name: "Nedorachio zone 3 last triggered ago"
-        state: >-
-          {% set ts = states('number.nedorachio_irrigation_controller_zone_3_last_finished_epoch') | int(0) %}
-          {% if ts <= 0 %}
-            unknown
-          {% else %}
-            {% set delta = (as_timestamp(now()) - ts) | int(0) %}
-            {% if delta < 60 %}
-              {{ delta }}s
-            {% elif delta < 3600 %}
-              {{ (delta // 60) }}m
-            {% elif delta < 86400 %}
-              {{ (delta // 3600) }}h {{ ((delta % 3600) // 60) }}m
-            {% else %}
-              {{ (delta // 86400) }}d {{ ((delta % 86400) // 3600) }}h
-            {% endif %}
-          {% endif %}
-      - name: "Nedorachio zone 4 last triggered ago"
-        state: >-
-          {% set ts = states('number.nedorachio_irrigation_controller_zone_4_last_finished_epoch') | int(0) %}
-          {% if ts <= 0 %}
-            unknown
-          {% else %}
-            {% set delta = (as_timestamp(now()) - ts) | int(0) %}
-            {% if delta < 60 %}
-              {{ delta }}s
-            {% elif delta < 3600 %}
-              {{ (delta // 60) }}m
-            {% elif delta < 86400 %}
-              {{ (delta // 3600) }}h {{ ((delta % 3600) // 60) }}m
-            {% else %}
-              {{ (delta // 86400) }}d {{ ((delta % 86400) // 3600) }}h
-            {% endif %}
-          {% endif %}
-      - name: "Nedorachio zone 5 last triggered ago"
-        state: >-
-          {% set ts = states('number.nedorachio_irrigation_controller_zone_5_last_finished_epoch') | int(0) %}
-          {% if ts <= 0 %}
-            unknown
-          {% else %}
-            {% set delta = (as_timestamp(now()) - ts) | int(0) %}
-            {% if delta < 60 %}
-              {{ delta }}s
-            {% elif delta < 3600 %}
-              {{ (delta // 60) }}m
-            {% elif delta < 86400 %}
-              {{ (delta // 3600) }}h {{ ((delta % 3600) // 60) }}m
-            {% else %}
-              {{ (delta // 86400) }}d {{ ((delta % 86400) // 3600) }}h
-            {% endif %}
-          {% endif %}
-      - name: "Nedorachio zone 6 last triggered ago"
-        state: >-
-          {% set ts = states('number.nedorachio_irrigation_controller_zone_6_last_finished_epoch') | int(0) %}
-          {% if ts <= 0 %}
-            unknown
-          {% else %}
-            {% set delta = (as_timestamp(now()) - ts) | int(0) %}
-            {% if delta < 60 %}
-              {{ delta }}s
-            {% elif delta < 3600 %}
-              {{ (delta // 60) }}m
-            {% elif delta < 86400 %}
-              {{ (delta // 3600) }}h {{ ((delta % 3600) // 60) }}m
-            {% else %}
-              {{ (delta // 86400) }}d {{ ((delta % 86400) // 3600) }}h
-            {% endif %}
-          {% endif %}
-      - name: "Nedorachio zone 7 last triggered ago"
-        state: >-
-          {% set ts = states('number.nedorachio_irrigation_controller_zone_7_last_finished_epoch') | int(0) %}
-          {% if ts <= 0 %}
-            unknown
-          {% else %}
-            {% set delta = (as_timestamp(now()) - ts) | int(0) %}
-            {% if delta < 60 %}
-              {{ delta }}s
-            {% elif delta < 3600 %}
-              {{ (delta // 60) }}m
-            {% elif delta < 86400 %}
-              {{ (delta // 3600) }}h {{ ((delta % 3600) // 60) }}m
-            {% else %}
-              {{ (delta // 86400) }}d {{ ((delta % 86400) // 3600) }}h
-            {% endif %}
-          {% endif %}
-      - name: "Nedorachio zone 8 last triggered ago"
-        state: >-
-          {% set ts = states('number.nedorachio_irrigation_controller_zone_8_last_finished_epoch') | int(0) %}
-          {% if ts <= 0 %}
-            unknown
-          {% else %}
-            {% set delta = (as_timestamp(now()) - ts) | int(0) %}
-            {% if delta < 60 %}
-              {{ delta }}s
-            {% elif delta < 3600 %}
-              {{ (delta // 60) }}m
-            {% elif delta < 86400 %}
-              {{ (delta // 3600) }}h {{ ((delta % 3600) // 60) }}m
-            {% else %}
-              {{ (delta // 86400) }}d {{ ((delta % 86400) // 3600) }}h
-            {% endif %}
+            {% if ts <= 0 %}unknown{% else %}{{ ts | timestamp_custom('%Y-%m-%d %H:%M', true) }}{% endif %}
           {% endif %}
 
-homeassistant:
-  customize:
-    sensor.nedorachio_zone_1_last_triggered_ago:
-      logbook: false
-    sensor.nedorachio_zone_2_last_triggered_ago:
-      logbook: false
-    sensor.nedorachio_zone_3_last_triggered_ago:
-      logbook: false
-    sensor.nedorachio_zone_4_last_triggered_ago:
-      logbook: false
-    sensor.nedorachio_zone_5_last_triggered_ago:
-      logbook: false
-    sensor.nedorachio_zone_6_last_triggered_ago:
-      logbook: false
-    sensor.nedorachio_zone_7_last_triggered_ago:
-      logbook: false
-    sensor.nedorachio_zone_8_last_triggered_ago:
-      logbook: false
-    sensor.nedorachio_zone_1_next_run_local:
-      logbook: false
-    sensor.nedorachio_zone_2_next_run_local:
-      logbook: false
-    sensor.nedorachio_zone_3_next_run_local:
-      logbook: false
-    sensor.nedorachio_zone_4_next_run_local:
-      logbook: false
-    sensor.nedorachio_zone_5_next_run_local:
-      logbook: false
-    sensor.nedorachio_zone_6_next_run_local:
-      logbook: false
-    sensor.nedorachio_zone_7_next_run_local:
-      logbook: false
-    sensor.nedorachio_zone_8_next_run_local:
-      logbook: false
-    sensor.nedorachio_irrigation_controller_zone_1_scheduled_next_start_epoch:
-      logbook: false
-    sensor.nedorachio_irrigation_controller_zone_2_scheduled_next_start_epoch:
-      logbook: false
-    sensor.nedorachio_irrigation_controller_zone_3_scheduled_next_start_epoch:
-      logbook: false
-    sensor.nedorachio_irrigation_controller_zone_4_scheduled_next_start_epoch:
-      logbook: false
-    sensor.nedorachio_irrigation_controller_zone_5_scheduled_next_start_epoch:
-      logbook: false
-    sensor.nedorachio_irrigation_controller_zone_6_scheduled_next_start_epoch:
-      logbook: false
-    sensor.nedorachio_irrigation_controller_zone_7_scheduled_next_start_epoch:
-      logbook: false
-    sensor.nedorachio_irrigation_controller_zone_8_scheduled_next_start_epoch:
-      logbook: false
-    sensor.nedorachio_zone_1_next_run:
-      logbook: false
-    sensor.nedorachio_zone_2_next_run:
-      logbook: false
-    sensor.nedorachio_zone_3_next_run:
-      logbook: false
-    sensor.nedorachio_zone_4_next_run:
-      logbook: false
-    sensor.nedorachio_zone_5_next_run:
-      logbook: false
-    sensor.nedorachio_zone_6_next_run:
-      logbook: false
-    sensor.nedorachio_zone_7_next_run:
-      logbook: false
-    sensor.nedorachio_zone_8_next_run:
-      logbook: false
+automation:
+  - id: nedorachio_weather_feeder
+    alias: "Nedorachio: push 48h rain to controller"
+    trigger:
+      - platform: time_pattern
+        minutes: "/10"
+    action:
+      - variables:
+          rain_mm: >-
+            {% set obs_id = 'sensor.rain_observed_48h' %}
+            {% if states(obs_id) not in ['unknown','unavailable','none', None] %}
+              {{ states(obs_id) | float(0) }}
+            {% else %}
+              0.0
+            {% endif %}
+          current_mm: >-
+            {{ states('number.nedorachio_irrigation_controller_rain_mm_last_48h') | float(-1) }}
+      - condition: template
+        value_template: "{{ (rain_mm | float(0)) != (current_mm | float(-1)) }}"
+      - action: number.set_value
+        target:
+          entity_id: number.nedorachio_irrigation_controller_rain_mm_last_48h
+        data:
+          value: "{{ rain_mm }}"
+
+  - id: nedorachio_alarm_notify
+    alias: "Nedorachio: run outcome notifications"
+    mode: parallel
+    trigger:
+      - platform: state
+        entity_id: text.nedorachio_irrigation_controller_last_run_outcome
+    condition:
+      - condition: template
+        value_template: >-
+          {{ trigger.to_state.state.startswith('cancelled_') or trigger.to_state.state.startswith('failed_') }}
+    action:
+      - variables:
+          outcome: "{{ trigger.to_state.state }}"
+          zone: "{{ states('sensor.nedorachio_irrigation_controller_currently_running_zone') }}"
+          phase: "{{ states('text.nedorachio_irrigation_controller_current_phase') }}"
+          psi: "{{ states('sensor.nedorachio_irrigation_controller_pressure') }}"
+          gpm: "{{ states('sensor.nedorachio_irrigation_controller_flow_rate_gpm') }}"
+      - action: notify.notify
+        data:
+          title: "Nedorachio: {{ outcome }}"
+          message: "Phase {{ phase }}, zone {{ zone }}. PSI {{ psi }}, flow {{ gpm }} gpm."
+
+lovelace:
+  dashboards:
+    nedorachio-dashboard:
+      mode: yaml
+      title: Nedorachio
+      icon: mdi:sprinkler
+      show_in_sidebar: true
+      filename: packages/nedorachio-dashboard.yaml

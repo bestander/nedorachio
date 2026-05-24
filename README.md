@@ -38,31 +38,27 @@ Enclosure CAD model: [Onshape enclosure model](https://cad.onshape.com/documents
 The current firmware uses **placeholder** GPIO assignments. Verify with the
 real board before flashing onto a system that's switching valves, then update
 both the table below and the matching `pin:` lines in
-`firmware/packages/02-zones.yaml` and `firmware/packages/03-sensors.yaml`.
+`firmware/packages/10-nedorachio-component.yaml`.
 
-| Function           | Placeholder GPIO | Notes |
-|--------------------|------------------|-------|
-| Relay 1 (zone 1)   | GPIO23           | active-low (`inverted: true`) |
-| Relay 2 (zone 2)   | GPIO19           | active-low |
-| Relay 3 (zone 3)   | GPIO18           | active-low |
-| Relay 4 (zone 4)   | GPIO5            | active-low |
-| Relay 5 (zone 5)   | GPIO17           | unused, terminal-blocked for future |
-| Relay 6 (zone 6)   | GPIO16           | unused |
-| Relay 7 (zone 7)   | GPIO4            | unused |
-| Relay 8 (zone 8)   | GPIO13           | unused |
-| Rain sensor input  | GPIO18           | internal pull-up |
-| Flow meter pulse   | GPIO19           | external 10k pull-up to 3.3V |
-| Pressure ADC       | GPIO34           | ADC1, 11 dB attenuation |
-| Status/select LED  | GPIO14           | active-high (flip `inverted:` if wiring is active-low) |
-| Start/stop button  | GPIO21           | momentary, button-to-GND, internal pull-up |
-| Zone-select button | GPIO22           | momentary, button-to-GND, internal pull-up |
+| Function           | GPIO | Notes |
+|--------------------|------|-------|
+| Relay 1 (zone 1)   | GPIO32 | active-high |
+| Relay 2 (zone 2)   | GPIO33 | active-high |
+| Relay 3 (zone 3)   | GPIO25 | active-high |
+| Relay 4 (zone 4)   | GPIO26 | active-high |
+| Relay 5 (zone 5)   | GPIO27 | active-high |
+| Relay 6 (zone 6)   | GPIO14 | active-high |
+| Relay 7 (zone 7)   | GPIO12 | strapping pin — use with care |
+| Relay 8 (zone 8)   | GPIO13 | active-high |
+| Rain sensor input  | GPIO18 | internal pull-up |
+| Flow meter pulse   | GPIO19 | external 10k pull-up to 3.3V |
+| Pressure ADC       | GPIO34 | ADC1, 12 dB attenuation |
 
 ### Calibration
 
 Pressure transducer linear calibration is set in
-`firmware/packages/03-sensors.yaml` under the `calibrate_linear:` filter.
-The voltages refer to the **divider midpoint** (V_adc ≈ 0.667 × V_transducer
-with the 10k+20k divider used in this wiring).
+`firmware/packages/10-nedorachio-component.yaml` under the pressure sensor
+`calibrate_linear:` filter (restored from the pre-C++ `03-sensors.yaml`).
 
 Flow rate and total gallons are derived from pulse totals using calibrated
 `pulses_per_gallon`.
@@ -74,10 +70,8 @@ stream seen by ESPHome compared with the meter's ideal electrical model, so
 field-calibrated `pulses_per_gallon` matches real delivered gallons more
 reliably than nominal constants.
 
-`pulses_per_gallon` (HA
-`number.nedorachio_irrigation_controller_pulses_per_gallon`) defaults to
-`344.4` from controlled-run calibration. Recalibrate in HA when hardware or
-signal conditioning changes.
+`pulses_per_gallon` is compiled into the C++ component (`344.4` default).
+Recalibrate in firmware when hardware or signal conditioning changes.
 
 ### Perfboard wiring schematic (shared 12V PSU + 4N35 flow isolation)
 
@@ -199,49 +193,40 @@ cd firmware
 esphome run nedorachio.yaml      # OTA, board stays installed
 ```
 
-Counters and tunables persist across OTA reflashes via
-`restore_value: true` globals.
+Counters and zone cadence use **last watering** times stored in Home Assistant
+(`input_text.nedorachio_zone_N_last_watering`, epoch seconds). The ESP reads them
+on connect and updates them after each completed run.
 
 ### Layout
 
 ```
 firmware/
-  nedorachio.yaml            # entrypoint
+  nedorachio.yaml                  # entrypoint
+  components/nedorachio/         # C++ schedule + engine (external component)
   packages/
-    01-core.yaml             # WiFi, API, OTA, time, status
-    02-zones.yaml            # 8 relays + zone switches + safety
-    03-sensors.yaml          # rain, flow, pressure
-    04-tunables.yaml         # all number/switch entities
-    05-engine.yaml           # pre-flight, cycle-and-soak, cancels, sequencing
-    06-schedule.yaml         # cadence evaluator, per-zone last-finished, skip, plan readouts
-    07-stats.yaml            # per-zone gallons, runs, durations + rollover
+    01-core.yaml                   # WiFi, API, OTA, time, status
+    10-nedorachio-component.yaml   # hardware I/O + component wiring
+src/nedorachio/                  # canonical Python library (pytest target)
 ```
 
 ---
 
 ## Home Assistant setup
 
-1. Copy `homeassistant/packages/nedorachio.yaml` and
-   `homeassistant/packages/nedorachio_config.yaml` into your HA config under
-   `packages/`. Make sure `configuration.yaml` has
-   `homeassistant: packages: !include_dir_named packages`.
+1. Copy into your HA `packages/` folder (two files only):
+   `nedorachio.yaml` and `nedorachio-dashboard.yaml`.
+   Make sure `configuration.yaml` has `homeassistant: packages: !include_dir_named packages`.
 2. Replace `weather.your_local_forecast` with your weather entity.
    Keep the rain entity name as `sensor.rain_observed_48h` (recommended),
    so you do not need to edit package templates.
-3. Reload template entities and automations. On HA start (and every 30 minutes),
-   `script.nedorachio_apply_config_profile` re-applies the config profile to the
-   controller entities.
-   Rain-accumulation gate settings are also pushed from profile globals:
-   `rain_accumulation_threshold_mm_48h` and
-   `rain_accumulation_hold_hours_after_threshold`.
+3. Reload template entities and automations. **Sync config to device** pushes the
+   config profile. Last-watering times live in HA `input_text` helpers; the ESP
+   reads them automatically when connected.
 4. Within 10 minutes, `number.nedorachio_rain_mm_last_48h` should be populated.
 5. Edit the `notify.notify` line in `nedorachio_alarm_notify` to use your
    actual notification target (e.g. `notify.mobile_app_yourphone`).
-6. Add a new dashboard view: Settings → Dashboards → Open the Lovelace
-   dashboard → ⋮ → Edit Dashboard → ⋮ → Raw configuration editor → paste the
-   contents of `homeassistant/packages/nedorachio_dashboard.yaml` under
-   `views:`. Note that exact entity slugs depend on how HA names entities at
-   discovery — confirm each card resolves before saving.
+6. A **Nedorachio** dashboard appears in the sidebar automatically. If entity
+   slugs differ from discovery, adjust card entities in `nedorachio-dashboard.yaml`.
 
 ### OpenWeatherMap rain wiring
 

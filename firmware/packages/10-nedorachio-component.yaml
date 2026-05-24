@@ -1,0 +1,476 @@
+# Hardware outputs and sensors for nedorachio-v2 (no YAML engine).
+
+output:
+  - platform: gpio
+    pin: { number: GPIO32, inverted: false }
+    id: relay_1_out
+  - platform: gpio
+    pin: { number: GPIO33, inverted: false }
+    id: relay_2_out
+  - platform: gpio
+    pin: { number: GPIO25, inverted: false }
+    id: relay_3_out
+  - platform: gpio
+    pin: { number: GPIO26, inverted: false }
+    id: relay_4_out
+  - platform: gpio
+    pin: { number: GPIO27, inverted: false }
+    id: relay_5_out
+  - platform: gpio
+    pin: { number: GPIO14, inverted: false }
+    id: relay_6_out
+  - platform: gpio
+    pin: { number: GPIO12, inverted: false }
+    id: relay_7_out
+  - platform: gpio
+    pin: { number: GPIO13, inverted: false }
+    id: relay_8_out
+
+binary_sensor:
+  - platform: gpio
+    pin:
+      number: GPIO18
+      mode:
+        input: true
+        pullup: true
+      inverted: true
+    name: "Rain sensor"
+    id: rain_sensor
+    device_class: moisture
+    filters:
+      - delayed_on_off: 500ms
+
+sensor:
+  - platform: pulse_meter
+    name: "Irrigation Flow Pulses"
+    id: flow_pulses
+    pin:
+      number: GPIO19
+      mode:
+        input: true
+      inverted: true
+    unit_of_measurement: "pulses/min"
+    timeout: 2s
+    internal_filter: 500us
+    total:
+      name: "Flow Pulses Total"
+      id: flow_pulses_total
+      unit_of_measurement: "pulses"
+      accuracy_decimals: 0
+
+  - platform: template
+    name: "Flow Rate (GPM)"
+    id: flow_rate_gpm
+    unit_of_measurement: "GPM"
+    update_interval: 5s
+    lambda: |-
+      static uint32_t last_total = 0;
+      static uint32_t last_ms = 0;
+      static float ema_gpm = 0.0f;
+      uint32_t now_ms = millis();
+      float ppg = 344.4f;
+      uint32_t total = (uint32_t) id(flow_pulses_total).state;
+      if (last_ms == 0) {
+        last_ms = now_ms;
+        last_total = total;
+        return 0.0f;
+      }
+      uint32_t dt_ms = now_ms - last_ms;
+      if (dt_ms < 5000) return ema_gpm;
+      int32_t dp = (int32_t) total - (int32_t) last_total;
+      if (dp < 0) dp = 0;
+      float inst_gpm = (dp > 0) ? ((float) dp * 60000.0f / (float) dt_ms / ppg) : 0.0f;
+      ema_gpm = (ema_gpm == 0.0f) ? inst_gpm : (0.7f * ema_gpm + 0.3f * inst_gpm);
+      last_total = total;
+      last_ms = now_ms;
+      return ema_gpm;
+
+  # Pressure: ADC1 input from pressure sensor through a 10k/20k divider.
+  # ADC node sees ~2/3 of transducer output.
+  - platform: adc
+    pin: GPIO34
+    name: "Pressure"
+    id: pressure_psi
+    update_interval: 1s
+    attenuation: 11db
+    accuracy_decimals: 1
+    unit_of_measurement: "psi"
+    filters:
+      - sliding_window_moving_average:
+          window_size: 5
+          send_every: 1
+      # Calibration points for divider midpoint (R4=10k, R5=20k).
+      - calibrate_linear:
+          method: exact
+          datapoints:
+            - 0.000 -> 0.0
+            - 0.240 -> 10.0
+            - 0.460 -> 20.0
+            - 0.680 -> 30.0
+            - 0.900 -> 40.0
+            - 1.120 -> 50.0
+            - 1.360 -> 60.0
+            - 1.600 -> 70.0
+            - 1.840 -> 80.0
+            - 2.080 -> 90.0
+            - 2.320 -> 100.0
+      - clamp:
+          min_value: 0.0
+          max_value: 100.0
+
+  - platform: template
+    name: "Currently running zone"
+    id: currently_running_zone_sensor
+    accuracy_decimals: 0
+    update_interval: 1s
+    lambda: 'return (float) id(irrigation).get_currently_running_zone();'
+
+  - platform: template
+    name: "Zone 1 scheduled next start epoch"
+    id: zone_1_scheduled_next_start_epoch_sensor
+    accuracy_decimals: 0
+    update_interval: 30s
+    lambda: 'return id(irrigation).get_zone_scheduled_next(1);'
+  - platform: template
+    name: "Zone 2 scheduled next start epoch"
+    id: zone_2_scheduled_next_start_epoch_sensor
+    accuracy_decimals: 0
+    update_interval: 30s
+    lambda: 'return id(irrigation).get_zone_scheduled_next(2);'
+  - platform: template
+    name: "Zone 3 scheduled next start epoch"
+    id: zone_3_scheduled_next_start_epoch_sensor
+    accuracy_decimals: 0
+    update_interval: 30s
+    lambda: 'return id(irrigation).get_zone_scheduled_next(3);'
+  - platform: template
+    name: "Zone 4 scheduled next start epoch"
+    id: zone_4_scheduled_next_start_epoch_sensor
+    accuracy_decimals: 0
+    update_interval: 30s
+    lambda: 'return id(irrigation).get_zone_scheduled_next(4);'
+  - platform: template
+    name: "Zone 5 scheduled next start epoch"
+    id: zone_5_scheduled_next_start_epoch_sensor
+    accuracy_decimals: 0
+    update_interval: 30s
+    lambda: 'return id(irrigation).get_zone_scheduled_next(5);'
+  - platform: template
+    name: "Zone 6 scheduled next start epoch"
+    id: zone_6_scheduled_next_start_epoch_sensor
+    accuracy_decimals: 0
+    update_interval: 30s
+    lambda: 'return id(irrigation).get_zone_scheduled_next(6);'
+  - platform: template
+    name: "Zone 7 scheduled next start epoch"
+    id: zone_7_scheduled_next_start_epoch_sensor
+    accuracy_decimals: 0
+    update_interval: 30s
+    lambda: 'return id(irrigation).get_zone_scheduled_next(7);'
+  - platform: template
+    name: "Zone 8 scheduled next start epoch"
+    id: zone_8_scheduled_next_start_epoch_sensor
+    accuracy_decimals: 0
+    update_interval: 30s
+    lambda: 'return id(irrigation).get_zone_scheduled_next(8);'
+
+  - platform: homeassistant
+    name: "HA zone 1 last watering epoch"
+    id: ha_zone_1_last_watering_epoch
+    entity_id: sensor.nedorachio_zone_1_last_watering_epoch
+    internal: true
+    on_value:
+      - lambda: 'id(irrigation).on_zone_last_watering(1, (uint32_t) x);'
+  - platform: homeassistant
+    name: "HA zone 2 last watering epoch"
+    id: ha_zone_2_last_watering_epoch
+    entity_id: sensor.nedorachio_zone_2_last_watering_epoch
+    internal: true
+    on_value:
+      - lambda: 'id(irrigation).on_zone_last_watering(2, (uint32_t) x);'
+  - platform: homeassistant
+    name: "HA zone 3 last watering epoch"
+    id: ha_zone_3_last_watering_epoch
+    entity_id: sensor.nedorachio_zone_3_last_watering_epoch
+    internal: true
+    on_value:
+      - lambda: 'id(irrigation).on_zone_last_watering(3, (uint32_t) x);'
+  - platform: homeassistant
+    name: "HA zone 4 last watering epoch"
+    id: ha_zone_4_last_watering_epoch
+    entity_id: sensor.nedorachio_zone_4_last_watering_epoch
+    internal: true
+    on_value:
+      - lambda: 'id(irrigation).on_zone_last_watering(4, (uint32_t) x);'
+  - platform: homeassistant
+    name: "HA zone 5 last watering epoch"
+    id: ha_zone_5_last_watering_epoch
+    entity_id: sensor.nedorachio_zone_5_last_watering_epoch
+    internal: true
+    on_value:
+      - lambda: 'id(irrigation).on_zone_last_watering(5, (uint32_t) x);'
+  - platform: homeassistant
+    name: "HA zone 6 last watering epoch"
+    id: ha_zone_6_last_watering_epoch
+    entity_id: sensor.nedorachio_zone_6_last_watering_epoch
+    internal: true
+    on_value:
+      - lambda: 'id(irrigation).on_zone_last_watering(6, (uint32_t) x);'
+  - platform: homeassistant
+    name: "HA zone 7 last watering epoch"
+    id: ha_zone_7_last_watering_epoch
+    entity_id: sensor.nedorachio_zone_7_last_watering_epoch
+    internal: true
+    on_value:
+      - lambda: 'id(irrigation).on_zone_last_watering(7, (uint32_t) x);'
+  - platform: homeassistant
+    name: "HA zone 8 last watering epoch"
+    id: ha_zone_8_last_watering_epoch
+    entity_id: sensor.nedorachio_zone_8_last_watering_epoch
+    internal: true
+    on_value:
+      - lambda: 'id(irrigation).on_zone_last_watering(8, (uint32_t) x);'
+
+text:
+  - platform: template
+    name: "Current phase"
+    id: current_phase_text
+    mode: text
+    optimistic: false
+    update_interval: 1s
+    lambda: |-
+      return std::string(id(irrigation).get_current_phase());
+    set_action:
+      - lambda: |-
+          // read-only status text
+
+  - platform: template
+    name: "Last run outcome"
+    id: last_run_outcome_text
+    mode: text
+    optimistic: false
+    update_interval: 1s
+    lambda: |-
+      return std::string(id(irrigation).get_last_run_outcome());
+    set_action:
+      - lambda: |-
+          // read-only status text
+
+# Publish zone last-watering epochs back to HA input_text helpers.
+globals:
+  - id: ha_publish_epoch
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+
+script:
+  - id: ha_pub_z1_last_watering
+    then:
+      - homeassistant.action:
+          action: input_text.set_value
+          data:
+            entity_id: input_text.nedorachio_zone_1_last_watering
+            value: !lambda 'return std::to_string(id(ha_publish_epoch));'
+  - id: ha_pub_z2_last_watering
+    then:
+      - homeassistant.action:
+          action: input_text.set_value
+          data:
+            entity_id: input_text.nedorachio_zone_2_last_watering
+            value: !lambda 'return std::to_string(id(ha_publish_epoch));'
+  - id: ha_pub_z3_last_watering
+    then:
+      - homeassistant.action:
+          action: input_text.set_value
+          data:
+            entity_id: input_text.nedorachio_zone_3_last_watering
+            value: !lambda 'return std::to_string(id(ha_publish_epoch));'
+  - id: ha_pub_z4_last_watering
+    then:
+      - homeassistant.action:
+          action: input_text.set_value
+          data:
+            entity_id: input_text.nedorachio_zone_4_last_watering
+            value: !lambda 'return std::to_string(id(ha_publish_epoch));'
+  - id: ha_pub_z5_last_watering
+    then:
+      - homeassistant.action:
+          action: input_text.set_value
+          data:
+            entity_id: input_text.nedorachio_zone_5_last_watering
+            value: !lambda 'return std::to_string(id(ha_publish_epoch));'
+  - id: ha_pub_z6_last_watering
+    then:
+      - homeassistant.action:
+          action: input_text.set_value
+          data:
+            entity_id: input_text.nedorachio_zone_6_last_watering
+            value: !lambda 'return std::to_string(id(ha_publish_epoch));'
+  - id: ha_pub_z7_last_watering
+    then:
+      - homeassistant.action:
+          action: input_text.set_value
+          data:
+            entity_id: input_text.nedorachio_zone_7_last_watering
+            value: !lambda 'return std::to_string(id(ha_publish_epoch));'
+  - id: ha_pub_z8_last_watering
+    then:
+      - homeassistant.action:
+          action: input_text.set_value
+          data:
+            entity_id: input_text.nedorachio_zone_8_last_watering
+            value: !lambda 'return std::to_string(id(ha_publish_epoch));'
+
+interval:
+  - interval: 1s
+    then:
+      - lambda: |-
+          auto req = id(irrigation).consume_ha_publish_request();
+          if (req.zone <= 0) return;
+          id(ha_publish_epoch) = req.epoch;
+          switch (req.zone) {
+            case 1: id(ha_pub_z1_last_watering).execute(); break;
+            case 2: id(ha_pub_z2_last_watering).execute(); break;
+            case 3: id(ha_pub_z3_last_watering).execute(); break;
+            case 4: id(ha_pub_z4_last_watering).execute(); break;
+            case 5: id(ha_pub_z5_last_watering).execute(); break;
+            case 6: id(ha_pub_z6_last_watering).execute(); break;
+            case 7: id(ha_pub_z7_last_watering).execute(); break;
+            case 8: id(ha_pub_z8_last_watering).execute(); break;
+          }
+
+switch:
+  - platform: template
+    name: "Zone 1"
+    id: zone_1
+    icon: mdi:water
+    optimistic: false
+    lambda: 'return id(irrigation).get_zone_actual_state(1);'
+    turn_on_action:
+      - lambda: 'id(irrigation).request_zone_on(1);'
+    turn_off_action:
+      - lambda: 'id(irrigation).request_zone_off(1);'
+  - platform: template
+    name: "Zone 2"
+    id: zone_2
+    icon: mdi:water
+    optimistic: false
+    lambda: 'return id(irrigation).get_zone_actual_state(2);'
+    turn_on_action:
+      - lambda: 'id(irrigation).request_zone_on(2);'
+    turn_off_action:
+      - lambda: 'id(irrigation).request_zone_off(2);'
+  - platform: template
+    name: "Zone 3"
+    id: zone_3
+    icon: mdi:water
+    optimistic: false
+    lambda: 'return id(irrigation).get_zone_actual_state(3);'
+    turn_on_action:
+      - lambda: 'id(irrigation).request_zone_on(3);'
+    turn_off_action:
+      - lambda: 'id(irrigation).request_zone_off(3);'
+  - platform: template
+    name: "Zone 4"
+    id: zone_4
+    icon: mdi:water
+    optimistic: false
+    lambda: 'return id(irrigation).get_zone_actual_state(4);'
+    turn_on_action:
+      - lambda: 'id(irrigation).request_zone_on(4);'
+    turn_off_action:
+      - lambda: 'id(irrigation).request_zone_off(4);'
+  - platform: template
+    name: "Zone 5"
+    id: zone_5
+    icon: mdi:water
+    optimistic: false
+    lambda: 'return id(irrigation).get_zone_actual_state(5);'
+    turn_on_action:
+      - lambda: 'id(irrigation).request_zone_on(5);'
+    turn_off_action:
+      - lambda: 'id(irrigation).request_zone_off(5);'
+  - platform: template
+    name: "Zone 6"
+    id: zone_6
+    icon: mdi:water
+    optimistic: false
+    lambda: 'return id(irrigation).get_zone_actual_state(6);'
+    turn_on_action:
+      - lambda: 'id(irrigation).request_zone_on(6);'
+    turn_off_action:
+      - lambda: 'id(irrigation).request_zone_off(6);'
+  - platform: template
+    name: "Zone 7"
+    id: zone_7
+    icon: mdi:water
+    optimistic: false
+    lambda: 'return id(irrigation).get_zone_actual_state(7);'
+    turn_on_action:
+      - lambda: 'id(irrigation).request_zone_on(7);'
+    turn_off_action:
+      - lambda: 'id(irrigation).request_zone_off(7);'
+  - platform: template
+    name: "Zone 8"
+    id: zone_8
+    icon: mdi:water
+    optimistic: false
+    lambda: 'return id(irrigation).get_zone_actual_state(8);'
+    turn_on_action:
+      - lambda: 'id(irrigation).request_zone_on(8);'
+    turn_off_action:
+      - lambda: 'id(irrigation).request_zone_off(8);'
+  - platform: template
+    name: "Fallback schedule enabled"
+    id: fallback_schedule_enabled
+    restore_mode: DISABLED
+    optimistic: false
+    lambda: 'return id(irrigation).fallback_schedule_enabled();'
+    turn_on_action:
+      - lambda: 'id(irrigation).set_fallback_schedule_enabled(true);'
+    turn_off_action:
+      - lambda: 'id(irrigation).set_fallback_schedule_enabled(false);'
+
+number:
+  - platform: template
+    name: "Rain mm last 48h"
+    id: rain_mm_last_48h
+    optimistic: true
+    initial_value: "0"
+    min_value: 0
+    max_value: 500
+    step: 0.1
+    unit_of_measurement: "mm"
+    set_action:
+      - lambda: |-
+          id(irrigation).set_rain_mm_last_48h(x, id(irrigation).now_epoch_for_rain());
+
+nedorachio:
+  id: irrigation
+  time_id: ha_time
+  pressure_sensor_id: pressure_psi
+  flow_gpm_sensor_id: flow_rate_gpm
+  flow_total_sensor_id: flow_pulses_total
+  rain_sensor_id: rain_sensor
+  zone_outputs:
+    - relay_1_out
+    - relay_2_out
+    - relay_3_out
+    - relay_4_out
+    - relay_5_out
+    - relay_6_out
+    - relay_7_out
+    - relay_8_out
+
+esphome:
+  on_boot:
+    priority: -100
+    then:
+      - output.turn_off: relay_1_out
+      - output.turn_off: relay_2_out
+      - output.turn_off: relay_3_out
+      - output.turn_off: relay_4_out
+      - output.turn_off: relay_5_out
+      - output.turn_off: relay_6_out
+      - output.turn_off: relay_7_out
+      - output.turn_off: relay_8_out

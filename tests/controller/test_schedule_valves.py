@@ -17,7 +17,7 @@ from tests.controller.schedule_runner import (
     planned_fire_scenario,
     run_schedule_scenario,
 )
-from tests.controller.simulator import EventType
+from nedorachio.models import EventType
 
 
 class TestScheduleValveStateMachine:

@@ -5,19 +5,21 @@ substitutions:
 esphome:
   name: ${device_name}
   friendly_name: ${friendly_name}
+  platformio_options:
+    lib_deps:
+      - bblanchon/ArduinoJson@^7.2.0
 
 esp32:
   board: esp32dev
   framework:
     type: arduino
 
+external_components:
+  - source:
+      type: local
+      path: components
+
 packages:
   core: !include packages/01-core.yaml
-  zones: !include packages/02-zones.yaml
-  sensors: !include packages/03-sensors.yaml
-  tunables: !include packages/04-tunables.yaml
-  engine: !include packages/05-engine.yaml
-  schedule: !include packages/06-schedule.yaml
-  stats: !include packages/07-stats.yaml
-  local: !include packages/08-local-controls.yaml
-  ha_state: !include packages/09-ha-state.yaml
+  component: !include packages/10-nedorachio-component.yaml
+  config: !include packages/11-config-profile.yaml

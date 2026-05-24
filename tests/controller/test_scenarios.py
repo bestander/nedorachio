@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from tests.controller.harness import IrrigationHarness
-from tests.controller.simulator import EventType
+from nedorachio.models import EventType
 
 
 class TestPlanningAndExecution:

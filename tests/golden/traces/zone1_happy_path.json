@@ -1,0 +1,10 @@
+{
+  "name": "zone1_happy_path",
+  "steps": [
+    {"action": "make_zone_due", "zone": 1},
+    {"action": "advance_seconds", "seconds": 3600}
+  ],
+  "expect": {
+    "last_outcome": "completed"
+  }
+}
