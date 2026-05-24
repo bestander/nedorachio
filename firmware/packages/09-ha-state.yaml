@@ -1,0 +1,253 @@
+# HA-authoritative persisted state. Device RAM only — no NVS.
+# Home Assistant pushes values on connect via number.set_value; the controller
+# publishes live values back through the same entities (lambda + set_action).
+
+number:
+  - platform: template
+    name: "Zone 1 last finished epoch"
+    id: zone_1_last_finished_ha
+    optimistic: false
+    min_value: 0
+    max_value: 4000000000
+    step: 1
+    update_interval: 15s
+    lambda: 'return (float) id(zone_1_last_finished_epoch);'
+    set_action:
+      - lambda: |-
+          // Device owns cadence — ignore HA state-restore pushes (they rewound schedules).
+          ESP_LOGD("cadence", "Zone 1: ignored HA last_finished write %u (device has %u)",
+                   (uint32_t) x, id(zone_1_last_finished_epoch));
+  - platform: template
+    name: "Zone 2 last finished epoch"
+    id: zone_2_last_finished_ha
+    optimistic: false
+    min_value: 0
+    max_value: 4000000000
+    step: 1
+    update_interval: 15s
+    lambda: 'return (float) id(zone_2_last_finished_epoch);'
+    set_action:
+      - lambda: |-
+          ESP_LOGD("cadence", "Zone 2: ignored HA last_finished write %u (device has %u)",
+                   (uint32_t) x, id(zone_2_last_finished_epoch));
+  - platform: template
+    name: "Zone 3 last finished epoch"
+    id: zone_3_last_finished_ha
+    optimistic: false
+    min_value: 0
+    max_value: 4000000000
+    step: 1
+    update_interval: 15s
+    lambda: 'return (float) id(zone_3_last_finished_epoch);'
+    set_action:
+      - lambda: |-
+          ESP_LOGD("cadence", "Zone 3: ignored HA last_finished write %u (device has %u)",
+                   (uint32_t) x, id(zone_3_last_finished_epoch));
+  - platform: template
+    name: "Zone 4 last finished epoch"
+    id: zone_4_last_finished_ha
+    optimistic: false
+    min_value: 0
+    max_value: 4000000000
+    step: 1
+    update_interval: 15s
+    lambda: 'return (float) id(zone_4_last_finished_epoch);'
+    set_action:
+      - lambda: |-
+          ESP_LOGD("cadence", "Zone 4: ignored HA last_finished write %u (device has %u)",
+                   (uint32_t) x, id(zone_4_last_finished_epoch));
+  - platform: template
+    name: "Zone 5 last finished epoch"
+    id: zone_5_last_finished_ha
+    optimistic: false
+    min_value: 0
+    max_value: 4000000000
+    step: 1
+    update_interval: 15s
+    lambda: 'return (float) id(zone_5_last_finished_epoch);'
+    set_action:
+      - lambda: |-
+          ESP_LOGD("cadence", "Zone 5: ignored HA last_finished write %u (device has %u)",
+                   (uint32_t) x, id(zone_5_last_finished_epoch));
+  - platform: template
+    name: "Zone 6 last finished epoch"
+    id: zone_6_last_finished_ha
+    optimistic: false
+    min_value: 0
+    max_value: 4000000000
+    step: 1
+    update_interval: 15s
+    lambda: 'return (float) id(zone_6_last_finished_epoch);'
+    set_action:
+      - lambda: |-
+          ESP_LOGD("cadence", "Zone 6: ignored HA last_finished write %u (device has %u)",
+                   (uint32_t) x, id(zone_6_last_finished_epoch));
+  - platform: template
+    name: "Zone 7 last finished epoch"
+    id: zone_7_last_finished_ha
+    optimistic: false
+    min_value: 0
+    max_value: 4000000000
+    step: 1
+    update_interval: 15s
+    lambda: 'return (float) id(zone_7_last_finished_epoch);'
+    set_action:
+      - lambda: |-
+          ESP_LOGD("cadence", "Zone 7: ignored HA last_finished write %u (device has %u)",
+                   (uint32_t) x, id(zone_7_last_finished_epoch));
+  - platform: template
+    name: "Zone 8 last finished epoch"
+    id: zone_8_last_finished_ha
+    optimistic: false
+    min_value: 0
+    max_value: 4000000000
+    step: 1
+    update_interval: 15s
+    lambda: 'return (float) id(zone_8_last_finished_epoch);'
+    set_action:
+      - lambda: |-
+          ESP_LOGD("cadence", "Zone 8: ignored HA last_finished write %u (device has %u)",
+                   (uint32_t) x, id(zone_8_last_finished_epoch));
+
+  - platform: template
+    name: "Last non-completed attempt epoch"
+    id: last_non_completed_attempt_ha
+    optimistic: false
+    min_value: 0
+    max_value: 4000000000
+    step: 1
+    update_interval: 15s
+    lambda: 'return (float) id(last_non_completed_attempt_epoch);'
+    set_action:
+      - lambda: 'id(last_non_completed_attempt_epoch) = (uint32_t) x;'
+
+  - platform: template
+    name: "Zone 1 cycle delivered gallons"
+    id: zone_1_cycle_delivered_ha
+    optimistic: false
+    min_value: 0
+    max_value: 10000
+    step: 0.1
+    unit_of_measurement: "gal"
+    update_interval: 1s
+    lambda: 'return id(zone_1_cycle_delivered_gallons);'
+    set_action:
+      - lambda: 'id(zone_1_cycle_delivered_gallons) = x;'
+  - platform: template
+    name: "Zone 2 cycle delivered gallons"
+    id: zone_2_cycle_delivered_ha
+    optimistic: false
+    min_value: 0
+    max_value: 10000
+    step: 0.1
+    unit_of_measurement: "gal"
+    update_interval: 1s
+    lambda: 'return id(zone_2_cycle_delivered_gallons);'
+    set_action:
+      - lambda: 'id(zone_2_cycle_delivered_gallons) = x;'
+  - platform: template
+    name: "Zone 3 cycle delivered gallons"
+    id: zone_3_cycle_delivered_ha
+    optimistic: false
+    min_value: 0
+    max_value: 10000
+    step: 0.1
+    unit_of_measurement: "gal"
+    update_interval: 1s
+    lambda: 'return id(zone_3_cycle_delivered_gallons);'
+    set_action:
+      - lambda: 'id(zone_3_cycle_delivered_gallons) = x;'
+  - platform: template
+    name: "Zone 4 cycle delivered gallons"
+    id: zone_4_cycle_delivered_ha
+    optimistic: false
+    min_value: 0
+    max_value: 10000
+    step: 0.1
+    unit_of_measurement: "gal"
+    update_interval: 1s
+    lambda: 'return id(zone_4_cycle_delivered_gallons);'
+    set_action:
+      - lambda: 'id(zone_4_cycle_delivered_gallons) = x;'
+  - platform: template
+    name: "Zone 5 cycle delivered gallons"
+    id: zone_5_cycle_delivered_ha
+    optimistic: false
+    min_value: 0
+    max_value: 10000
+    step: 0.1
+    unit_of_measurement: "gal"
+    update_interval: 1s
+    lambda: 'return id(zone_5_cycle_delivered_gallons);'
+    set_action:
+      - lambda: 'id(zone_5_cycle_delivered_gallons) = x;'
+  - platform: template
+    name: "Zone 6 cycle delivered gallons"
+    id: zone_6_cycle_delivered_ha
+    optimistic: false
+    min_value: 0
+    max_value: 10000
+    step: 0.1
+    unit_of_measurement: "gal"
+    update_interval: 1s
+    lambda: 'return id(zone_6_cycle_delivered_gallons);'
+    set_action:
+      - lambda: 'id(zone_6_cycle_delivered_gallons) = x;'
+  - platform: template
+    name: "Zone 7 cycle delivered gallons"
+    id: zone_7_cycle_delivered_ha
+    optimistic: false
+    min_value: 0
+    max_value: 10000
+    step: 0.1
+    unit_of_measurement: "gal"
+    update_interval: 1s
+    lambda: 'return id(zone_7_cycle_delivered_gallons);'
+    set_action:
+      - lambda: 'id(zone_7_cycle_delivered_gallons) = x;'
+  - platform: template
+    name: "Zone 8 cycle delivered gallons"
+    id: zone_8_cycle_delivered_ha
+    optimistic: false
+    min_value: 0
+    max_value: 10000
+    step: 0.1
+    unit_of_measurement: "gal"
+    update_interval: 1s
+    lambda: 'return id(zone_8_cycle_delivered_gallons);'
+    set_action:
+      - lambda: 'id(zone_8_cycle_delivered_gallons) = x;'
+
+  - platform: template
+    name: "Rain sensor last wet epoch"
+    id: rain_sensor_last_wet_ha
+    optimistic: false
+    min_value: 0
+    max_value: 4000000000
+    step: 1
+    update_interval: 60s
+    lambda: 'return (float) id(rain_sensor_last_wet_epoch);'
+    set_action:
+      - lambda: 'id(rain_sensor_last_wet_epoch) = (uint32_t) x;'
+  - platform: template
+    name: "Rain forecast last high epoch"
+    id: rain_forecast_last_high_ha
+    optimistic: false
+    min_value: 0
+    max_value: 4000000000
+    step: 1
+    update_interval: 60s
+    lambda: 'return (float) id(rain_forecast_last_high_epoch);'
+    set_action:
+      - lambda: 'id(rain_forecast_last_high_epoch) = (uint32_t) x;'
+  - platform: template
+    name: "Last known epoch"
+    id: last_known_epoch_ha
+    optimistic: false
+    min_value: 0
+    max_value: 4000000000
+    step: 1
+    update_interval: 60s
+    lambda: 'return (float) id(last_known_epoch);'
+    set_action:
+      - lambda: 'id(last_known_epoch) = (uint32_t) x;'

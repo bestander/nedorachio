@@ -46,7 +46,11 @@ globals:
     initial_value: '0'
   - id: last_non_completed_attempt_epoch
     type: uint32_t
-    restore_value: true
+    restore_value: false
+    initial_value: '0'
+  - id: last_completed_zone
+    type: int
+    restore_value: false
     initial_value: '0'
 
   # Computed plan: next scheduled start epoch per zone (serial queue, see interval below).
@@ -109,7 +113,21 @@ button:
 interval:
   - interval: 30s
     then:
+      - script.execute: heal_zone_cadence
       - lambda: |-
+          if (!id(fallback_schedule_enabled).state)
+            return;
+          if (id(currently_on_zone) != 0)
+            return;
+          if (id(run_one_zone_with_retry).is_running())
+            return;
+          if (id(run_one_zone_gallons_target).is_running())
+            return;
+          if (id(run_one_zone).is_running())
+            return;
+          if (id(run_full_cycle).is_running())
+            return;
+
           id(zone_1_scheduled_next_epoch) = 0;
           id(zone_2_scheduled_next_epoch) = 0;
           id(zone_3_scheduled_next_epoch) = 0;
@@ -118,8 +136,6 @@ interval:
           id(zone_6_scheduled_next_epoch) = 0;
           id(zone_7_scheduled_next_epoch) = 0;
           id(zone_8_scheduled_next_epoch) = 0;
-          if (!id(fallback_schedule_enabled).state)
-            return;
 
           uint32_t now_epoch = (uint32_t) id(effective_now_epoch).state;
           if (now_epoch == 0)
@@ -221,12 +237,15 @@ interval:
               continue;
 
             uint32_t interval_s = (uint32_t) (interval_h * 3600.0f);
-            if (last_finished == 0)
-              last_finished = id(fallback_start_epoch_est);
 
-            uint64_t raw_due_64 = (uint64_t) last_finished + interval_s;
-            uint32_t raw_due =
-                raw_due_64 > 0xFFFFFFFFu ? 0xFFFFFFFFu : (uint32_t) raw_due_64;
+            uint32_t raw_due;
+            if (last_finished == 0) {
+              raw_due = now_epoch;
+            } else {
+              uint64_t raw_due_64 = (uint64_t) last_finished + interval_s;
+              raw_due =
+                  raw_due_64 > 0xFFFFFFFFu ? 0xFFFFFFFFu : (uint32_t) raw_due_64;
+            }
             uint32_t ideal = snap_next(raw_due);
             if (ideal == 0)
               continue;
@@ -253,12 +272,8 @@ interval:
             }
           }
 
-          // Anchor serial queue to the next valid window/blackout slot, not raw
-          // wall time — prevents Friday blackout evenings from showing same-night
-          // plan times that the evaluator will never fire.
-          uint32_t cursor = snap_next(now_epoch);
-          if (cursor == 0)
-            cursor = now_epoch;
+          // Serial queue cursor: spacing between zones only (not wall-clock "now").
+          uint32_t cursor = 0;
 
           uint32_t dur_s = (uint32_t) (id(maximum_runtime_minutes).state * 60.0f);
           if (dur_s < 60)
@@ -271,7 +286,16 @@ interval:
           for (int i = 0; i < n; i++) {
             uint32_t ideal = ideals[i];
             int z = zids[i];
-            uint32_t merged = ideal > cursor ? ideal : cursor;
+            // Due/overdue: show the current minute (stable ~60s), not snap_next(now)
+            // which slides every plan tick and never looks "ready to fire".
+            uint32_t merged;
+            if (ideal <= now_epoch) {
+              merged = (now_epoch / 60u) * 60u;
+            } else {
+              merged = ideal;
+            }
+            if (cursor > merged)
+              merged = cursor;
             uint32_t actual = snap_next(merged);
             if (actual == 0)
               continue;
@@ -298,6 +322,7 @@ interval:
   # Cadence evaluator: runs every 60s; cheap when nothing is due.
   - interval: 60s
     then:
+      - script.execute: heal_zone_cadence
       - lambda: |-
           auto set_gate = [&](const char *reason, int due_zone = 0) {
             id(schedule_gate_reason_str) = reason;
@@ -359,10 +384,7 @@ interval:
               case 8: last_finished = id(zone_8_last_finished_epoch); interval_h = id(zone_8_min_interval_hours).state; break;
             }
             uint32_t interval_s = (uint32_t)(interval_h * 3600.0f);
-            if (last_finished == 0) {
-              last_finished = id(fallback_start_epoch_est);
-            }
-            bool due = (now_epoch >= last_finished + interval_s);
+            bool due = (last_finished == 0) || (now_epoch >= last_finished + interval_s);
             if (due) picked = zid;
           }
           if (picked == 0) {
@@ -433,6 +455,8 @@ script:
   - id: schedule_fire_handler
     mode: single
     then:
+      # Clear recoverable alarms from prior cancels; phantom flow stays latched.
+      - script.execute: clear_recoverable_alarms
       # Pre-flight gates (rain hold, pressure, etc.) — same path as the
       # "Run full cycle" button uses, with is_schedule=true so the
       # fallback_schedule_enabled gate also applies.
@@ -491,10 +515,11 @@ script:
           if (id(time_synced).state) {
             id(last_run_finished_epoch) = (uint32_t)id(effective_now_epoch).state;
           }
-          if (id(any_alarm_latched)) {
+          if (id(run_cancel_requested)) {
             id(last_run_outcome_str) = "cancelled_" + id(run_cancel_cause);
           } else {
             id(last_run_outcome_str) = "completed";
+            id(last_completed_zone) = id(due_zone_id);
           }
           id(due_zone_id) = 0;
 
@@ -532,6 +557,13 @@ sensor:
     update_interval: 5s
     accuracy_decimals: 0
     lambda: 'return (float) id(schedule_gate_due_zone);'
+
+  - platform: template
+    name: "Last completed zone"
+    id: last_completed_zone_sensor
+    update_interval: 5s
+    accuracy_decimals: 0
+    lambda: 'return (float) id(last_completed_zone);'
 
   - platform: template
     name: "Currently running zone"
@@ -591,11 +623,8 @@ sensor:
           case 8: last_finished = id(zone_8_last_finished_epoch); interval_h = id(zone_8_min_interval_hours).state; break;
         }
         uint32_t interval_s = (uint32_t)(interval_h * 3600.0f);
-        if (last_finished == 0) {
-          // Match scheduler behavior when historical value is unexpectedly zero.
-          last_finished = id(fallback_start_epoch_est);
-        }
-        if (now_epoch >= last_finished + interval_s) return (float)zid;
+        if (last_finished == 0 || now_epoch >= last_finished + interval_s)
+          return (float)zid;
       }
       return 0.0f;
 
@@ -613,55 +642,7 @@ sensor:
     accuracy_decimals: 0
     lambda: 'return (float)id(last_run_finished_epoch);'
 
-  # Per-zone "last finished" sensors so HA can show "watered N hours ago".
-  - platform: template
-    name: "Zone 1 last finished (epoch)"
-    id: zone_1_last_finished_at
-    update_interval: 60s
-    accuracy_decimals: 0
-    lambda: 'return (float)id(zone_1_last_finished_epoch);'
-  - platform: template
-    name: "Zone 2 last finished (epoch)"
-    id: zone_2_last_finished_at
-    update_interval: 60s
-    accuracy_decimals: 0
-    lambda: 'return (float)id(zone_2_last_finished_epoch);'
-  - platform: template
-    name: "Zone 3 last finished (epoch)"
-    id: zone_3_last_finished_at
-    update_interval: 60s
-    accuracy_decimals: 0
-    lambda: 'return (float)id(zone_3_last_finished_epoch);'
-  - platform: template
-    name: "Zone 4 last finished (epoch)"
-    id: zone_4_last_finished_at
-    update_interval: 60s
-    accuracy_decimals: 0
-    lambda: 'return (float)id(zone_4_last_finished_epoch);'
-  - platform: template
-    name: "Zone 5 last finished (epoch)"
-    id: zone_5_last_finished_at
-    update_interval: 60s
-    accuracy_decimals: 0
-    lambda: 'return (float)id(zone_5_last_finished_epoch);'
-  - platform: template
-    name: "Zone 6 last finished (epoch)"
-    id: zone_6_last_finished_at
-    update_interval: 60s
-    accuracy_decimals: 0
-    lambda: 'return (float)id(zone_6_last_finished_epoch);'
-  - platform: template
-    name: "Zone 7 last finished (epoch)"
-    id: zone_7_last_finished_at
-    update_interval: 60s
-    accuracy_decimals: 0
-    lambda: 'return (float)id(zone_7_last_finished_epoch);'
-  - platform: template
-    name: "Zone 8 last finished (epoch)"
-    id: zone_8_last_finished_at
-    update_interval: 60s
-    accuracy_decimals: 0
-    lambda: 'return (float)id(zone_8_last_finished_epoch);'
+  # Per-zone last finished: see packages/09-ha-state.yaml (HA read/write numbers).
 
   # Device-authoritative planned start (Unix epoch seconds); includes blackout,
   # window, and serial spacing via maximum_runtime_minutes between zones.

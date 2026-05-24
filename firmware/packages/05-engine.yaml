@@ -13,19 +13,19 @@ globals:
   # Last time the rain sensor was wet, epoch seconds.
   - id: rain_sensor_last_wet_epoch
     type: uint32_t
-    restore_value: true
+    restore_value: false
     initial_value: '0'
 
   # Last time the rain forecast was over threshold, epoch seconds.
   - id: rain_forecast_last_high_epoch
     type: uint32_t
-    restore_value: true
+    restore_value: false
     initial_value: '0'
 
   # Whether any alarm is latched. Cleared by `clear_fault`.
   - id: any_alarm_latched
     type: bool
-    restore_value: true
+    restore_value: false
     initial_value: 'false'
 
   # --- Per-run state (cycle-and-soak engine) ---
@@ -65,6 +65,10 @@ globals:
     type: int
     restore_value: false
     initial_value: '0'
+  - id: run_chunk_start_pulses
+    type: uint32_t
+    restore_value: false
+    initial_value: '0'
 
   # --- Full-cycle iteration state ---
   - id: cycle_zone_cursor
@@ -92,6 +96,10 @@ globals:
     restore_value: false
     initial_value: '0'
   - id: run_gallons_done
+    type: float
+    restore_value: false
+    initial_value: '0'
+  - id: run_base_gallons
     type: float
     restore_value: false
     initial_value: '0'
@@ -162,17 +170,8 @@ button:
   - platform: template
     name: "Clear fault"
     id: clear_fault
-    internal: true
     on_press:
-      - lambda: |-
-          id(any_alarm_latched) = false;
-      - binary_sensor.template.publish: { id: alarm_pre_flight_failed, state: false }
-      - binary_sensor.template.publish: { id: alarm_runtime_exceeded, state: false }
-      - binary_sensor.template.publish: { id: alarm_no_flow, state: false }
-      - binary_sensor.template.publish: { id: alarm_high_flow, state: false }
-      - binary_sensor.template.publish: { id: alarm_phantom_flow, state: false }
-      - binary_sensor.template.publish: { id: alarm_low_pressure, state: false }
-      - binary_sensor.template.publish: { id: alarm_high_pressure, state: false }
+      - script.execute: clear_all_faults
 
   - platform: template
     name: "Run now zone 1"
@@ -273,6 +272,34 @@ button:
           is_schedule: false
 
 script:
+  - id: clear_recoverable_alarms
+    mode: single
+    then:
+      - binary_sensor.template.publish: { id: alarm_pre_flight_failed, state: false }
+      - binary_sensor.template.publish: { id: alarm_runtime_exceeded, state: false }
+      - binary_sensor.template.publish: { id: alarm_no_flow, state: false }
+      - binary_sensor.template.publish: { id: alarm_high_flow, state: false }
+      - binary_sensor.template.publish: { id: alarm_low_pressure, state: false }
+      - binary_sensor.template.publish: { id: alarm_high_pressure, state: false }
+      - lambda: |-
+          // Only phantom flow requires manual clear; recoverable cancels retry via cooldown.
+          if (!id(alarm_phantom_flow).state) {
+            id(any_alarm_latched) = false;
+          }
+
+  - id: clear_all_faults
+    mode: single
+    then:
+      - lambda: |-
+          id(any_alarm_latched) = false;
+      - binary_sensor.template.publish: { id: alarm_pre_flight_failed, state: false }
+      - binary_sensor.template.publish: { id: alarm_runtime_exceeded, state: false }
+      - binary_sensor.template.publish: { id: alarm_no_flow, state: false }
+      - binary_sensor.template.publish: { id: alarm_high_flow, state: false }
+      - binary_sensor.template.publish: { id: alarm_phantom_flow, state: false }
+      - binary_sensor.template.publish: { id: alarm_low_pressure, state: false }
+      - binary_sensor.template.publish: { id: alarm_high_pressure, state: false }
+
   - id: run_pre_flight
     mode: single
     parameters:
@@ -388,15 +415,16 @@ script:
                     id(pre_flight_reason) == "rain_forecast_high" ||
                     id(pre_flight_reason) == "rain_forecast_hold" ||
                     id(pre_flight_reason) == "pressure_too_low" ||
-                    id(pre_flight_reason) == "pressure_too_high";
+                    id(pre_flight_reason) == "pressure_too_high" ||
+                    id(pre_flight_reason) == "alarm_latched";
                 if (benign_skip) {
                   ESP_LOGI("preflight", "SKIP: %s", id(pre_flight_reason).c_str());
                 } else {
                   id(alarm_pre_flight_failed).publish_state(true);
-                  id(any_alarm_latched) = true;
                   ESP_LOGW("preflight", "FAIL: %s", id(pre_flight_reason).c_str());
                 }
           else:
+            - binary_sensor.template.publish: { id: alarm_pre_flight_failed, state: false }
             - lambda: |-
                 ESP_LOGI("preflight", "PASS");
 
@@ -497,6 +525,13 @@ script:
           id: drive_zone
           zone_id: !lambda 'return id(run_zone_id);'
           state: !lambda 'return false;'
+      - if:
+          condition:
+            lambda: 'return !id(run_cancel_requested);'
+          then:
+            - script.execute:
+                id: stamp_zone_last_finished
+                zone_id: !lambda 'return id(run_zone_id);'
       - lambda: |-
           if (id(run_cancel_requested)) {
             ESP_LOGW("engine", "Zone %d cancelled (cause: %s, %.1f / %.1f min done)",
@@ -618,6 +653,7 @@ script:
             case 7: id(run_gallons_done) = id(zone_7_cycle_delivered_gallons); break;
             case 8: id(run_gallons_done) = id(zone_8_cycle_delivered_gallons); break;
           }
+          id(run_base_gallons) = id(run_gallons_done);
           float start_min_psi = 0.0f;
           float start_max_psi = 999.0f;
           switch (zone_id) {
@@ -635,60 +671,78 @@ script:
             id(run_cancel_requested) = true;
             id(run_cancel_cause) = "start_pressure_out_of_bounds";
           }
-      - while:
+      - if:
           condition:
-            lambda: |-
-              return id(run_gallons_done) < id(run_goal_gallons) &&
-                     !id(run_cancel_requested);
+            lambda: 'return id(run_gallons_done) >= id(run_goal_gallons);'
           then:
-            - lambda: |-
-                id(current_phase_str) = "running";
-                id(phase_started_ms) = millis();
-                id(phase_total_ms) = 0;
-            - script.execute:
-                id: drive_zone
-                zone_id: !lambda 'return id(run_zone_id);'
-                state: !lambda 'return true;'
-            - lambda: |-
-                uint32_t chunk_start_pulses = (uint32_t)id(flow_pulses_total).state;
-                while (!id(run_cancel_requested)) {
-                  delay(1000);
-                  uint32_t pulses_now = (uint32_t)id(flow_pulses_total).state;
-                  uint32_t chunk_pulses = (pulses_now >= chunk_start_pulses) ? (pulses_now - chunk_start_pulses) : 0;
-                  uint32_t run_pulses = (pulses_now >= id(zone_run_started_pulses)) ? (pulses_now - id(zone_run_started_pulses)) : 0;
-                  float ppg = id(pulses_per_gallon).state;
-                  float chunk_gallons_done = (ppg > 0.0f) ? (chunk_pulses / ppg) : 0.0f;
-                  float run_gallons_delta = (ppg > 0.0f) ? (run_pulses / ppg) : 0.0f;
-                  float base_gallons = 0.0f;
-                  switch (id(run_zone_id)) {
-                    case 1: base_gallons = id(zone_1_cycle_delivered_gallons); break;
-                    case 2: base_gallons = id(zone_2_cycle_delivered_gallons); break;
-                    case 3: base_gallons = id(zone_3_cycle_delivered_gallons); break;
-                    case 4: base_gallons = id(zone_4_cycle_delivered_gallons); break;
-                    case 5: base_gallons = id(zone_5_cycle_delivered_gallons); break;
-                    case 6: base_gallons = id(zone_6_cycle_delivered_gallons); break;
-                    case 7: base_gallons = id(zone_7_cycle_delivered_gallons); break;
-                    case 8: base_gallons = id(zone_8_cycle_delivered_gallons); break;
-                  }
-                  id(run_gallons_done) = base_gallons + run_gallons_delta;
-                  if (id(run_gallons_done) >= id(run_goal_gallons) || chunk_gallons_done >= id(run_cycle_gallons)) {
-                    break;
-                  }
-                }
-            - lambda: 'id(stamp_cadence_on_zone_off) = false;'
-            - script.execute:
-                id: drive_zone
-                zone_id: !lambda 'return id(run_zone_id);'
-                state: !lambda 'return false;'
-            - if:
+            - logger.log:
+                format: "Zone %d already at/above goal (%.2f / %.2f gal); skipping run."
+                args: ['id(run_zone_id)', 'id(run_gallons_done)', 'id(run_goal_gallons)']
+          else:
+            - while:
                 condition:
-                  lambda: 'return id(run_gallons_done) < id(run_goal_gallons) && !id(run_cancel_requested) && id(run_soak_min) > 0;'
+                  lambda: |-
+                    return id(run_gallons_done) < id(run_goal_gallons) &&
+                           !id(run_cancel_requested);
                 then:
                   - lambda: |-
-                      id(current_phase_str) = "soaking";
+                      id(current_phase_str) = "running";
                       id(phase_started_ms) = millis();
-                      id(phase_total_ms) = (uint32_t)(id(run_soak_min) * 60000.0f);
-                  - delay: !lambda 'return (uint32_t)(id(run_soak_min) * 60.0f * 1000.0f);'
+                      id(phase_total_ms) = 0;
+                  - script.execute:
+                      id: drive_zone
+                      zone_id: !lambda 'return id(run_zone_id);'
+                      state: !lambda 'return true;'
+                  - lambda: |-
+                      id(run_chunk_start_pulses) = (uint32_t)id(flow_pulses_total).state;
+                  - while:
+                      condition:
+                        lambda: |-
+                          if (id(run_cancel_requested)) return false;
+                          if (id(run_gallons_done) >= id(run_goal_gallons)) return false;
+                          uint32_t pulses_now = (uint32_t)id(flow_pulses_total).state;
+                          uint32_t chunk_pulses = (pulses_now >= id(run_chunk_start_pulses))
+                              ? (pulses_now - id(run_chunk_start_pulses)) : 0;
+                          float ppg = id(pulses_per_gallon).state;
+                          float chunk_gallons_done = (ppg > 0.0f) ? (chunk_pulses / ppg) : 0.0f;
+                          float remaining = id(run_goal_gallons) - id(run_gallons_done);
+                          if (remaining <= 0.0f) return false;
+                          float chunk_limit = id(run_cycle_gallons);
+                          if (chunk_limit > remaining) chunk_limit = remaining;
+                          return chunk_gallons_done < chunk_limit;
+                      then:
+                        - delay: 1s
+                        - lambda: |-
+                            uint32_t pulses_now = (uint32_t)id(flow_pulses_total).state;
+                            uint32_t run_pulses = (pulses_now >= id(zone_run_started_pulses))
+                                ? (pulses_now - id(zone_run_started_pulses)) : 0;
+                            float ppg = id(pulses_per_gallon).state;
+                            float run_gallons_delta = (ppg > 0.0f) ? (run_pulses / ppg) : 0.0f;
+                            id(run_gallons_done) = id(run_base_gallons) + run_gallons_delta;
+                            switch (id(run_zone_id)) {
+                              case 1: id(zone_1_cycle_delivered_gallons) = id(run_gallons_done); break;
+                              case 2: id(zone_2_cycle_delivered_gallons) = id(run_gallons_done); break;
+                              case 3: id(zone_3_cycle_delivered_gallons) = id(run_gallons_done); break;
+                              case 4: id(zone_4_cycle_delivered_gallons) = id(run_gallons_done); break;
+                              case 5: id(zone_5_cycle_delivered_gallons) = id(run_gallons_done); break;
+                              case 6: id(zone_6_cycle_delivered_gallons) = id(run_gallons_done); break;
+                              case 7: id(zone_7_cycle_delivered_gallons) = id(run_gallons_done); break;
+                              case 8: id(zone_8_cycle_delivered_gallons) = id(run_gallons_done); break;
+                            }
+                  - lambda: 'id(stamp_cadence_on_zone_off) = false;'
+                  - script.execute:
+                      id: drive_zone
+                      zone_id: !lambda 'return id(run_zone_id);'
+                      state: !lambda 'return false;'
+                  - if:
+                      condition:
+                        lambda: 'return id(run_gallons_done) < id(run_goal_gallons) && !id(run_cancel_requested) && id(run_soak_min) > 0;'
+                      then:
+                        - lambda: |-
+                            id(current_phase_str) = "soaking";
+                            id(phase_started_ms) = millis();
+                            id(phase_total_ms) = (uint32_t)(id(run_soak_min) * 60000.0f);
+                        - delay: !lambda 'return (uint32_t)(id(run_soak_min) * 60.0f * 1000.0f);'
       - lambda: |-
           id(stamp_cadence_on_zone_off) = !id(run_cancel_requested);
       - script.execute:
@@ -713,6 +767,88 @@ script:
             ESP_LOGI("engine", "Zone %d gallons-target complete (%.2f / %.2f gal)",
               id(run_zone_id), id(run_gallons_done), id(run_goal_gallons));
           }
+          uint32_t end_pulses = (uint32_t)id(flow_pulses_total).state;
+          uint32_t pulses = (end_pulses >= id(zone_run_started_pulses))
+              ? end_pulses - id(zone_run_started_pulses) : 0;
+          float ppg = id(pulses_per_gallon).state;
+          float gallons = (ppg > 0.0f) ? (pulses / ppg) : 0.0f;
+          uint32_t duration_s = (millis() - id(zone_run_started_ms)) / 1000;
+          uint32_t now_epoch = id(time_synced).state ? (uint32_t)id(effective_now_epoch).state : 0;
+          switch (id(run_zone_id)) {
+            case 1:
+              id(zone_1_run_count_total) += 1;
+              id(zone_1_gallons_total) += gallons;
+              id(zone_1_seconds_total) += duration_s;
+              id(zone_1_last_gallons) = gallons;
+              id(zone_1_last_duration_s) = duration_s;
+              if (now_epoch) id(zone_1_last_run_at) = now_epoch;
+              break;
+            case 2:
+              id(zone_2_run_count_total) += 1;
+              id(zone_2_gallons_total) += gallons;
+              id(zone_2_seconds_total) += duration_s;
+              id(zone_2_last_gallons) = gallons;
+              id(zone_2_last_duration_s) = duration_s;
+              if (now_epoch) id(zone_2_last_run_at) = now_epoch;
+              break;
+            case 3:
+              id(zone_3_run_count_total) += 1;
+              id(zone_3_gallons_total) += gallons;
+              id(zone_3_seconds_total) += duration_s;
+              id(zone_3_last_gallons) = gallons;
+              id(zone_3_last_duration_s) = duration_s;
+              if (now_epoch) id(zone_3_last_run_at) = now_epoch;
+              break;
+            case 4:
+              id(zone_4_run_count_total) += 1;
+              id(zone_4_gallons_total) += gallons;
+              id(zone_4_seconds_total) += duration_s;
+              id(zone_4_last_gallons) = gallons;
+              id(zone_4_last_duration_s) = duration_s;
+              if (now_epoch) id(zone_4_last_run_at) = now_epoch;
+              break;
+            case 5:
+              id(zone_5_run_count_total) += 1;
+              id(zone_5_gallons_total) += gallons;
+              id(zone_5_seconds_total) += duration_s;
+              id(zone_5_last_gallons) = gallons;
+              id(zone_5_last_duration_s) = duration_s;
+              if (now_epoch) id(zone_5_last_run_at) = now_epoch;
+              break;
+            case 6:
+              id(zone_6_run_count_total) += 1;
+              id(zone_6_gallons_total) += gallons;
+              id(zone_6_seconds_total) += duration_s;
+              id(zone_6_last_gallons) = gallons;
+              id(zone_6_last_duration_s) = duration_s;
+              if (now_epoch) id(zone_6_last_run_at) = now_epoch;
+              break;
+            case 7:
+              id(zone_7_run_count_total) += 1;
+              id(zone_7_gallons_total) += gallons;
+              id(zone_7_seconds_total) += duration_s;
+              id(zone_7_last_gallons) = gallons;
+              id(zone_7_last_duration_s) = duration_s;
+              if (now_epoch) id(zone_7_last_run_at) = now_epoch;
+              break;
+            case 8:
+              id(zone_8_run_count_total) += 1;
+              id(zone_8_gallons_total) += gallons;
+              id(zone_8_seconds_total) += duration_s;
+              id(zone_8_last_gallons) = gallons;
+              id(zone_8_last_duration_s) = duration_s;
+              if (now_epoch) id(zone_8_last_run_at) = now_epoch;
+              break;
+          }
+      - if:
+          condition:
+            lambda: |-
+              return !id(run_cancel_requested) &&
+                     id(run_gallons_done) >= id(run_goal_gallons);
+          then:
+            - script.execute:
+                id: stamp_zone_last_finished
+                zone_id: !lambda 'return id(run_zone_id);'
 
   # Single-attempt wrapper. Re-attempt pacing is owned by the scheduler via
   # `attempt_cooldown_minutes` and allowed-window checks.
@@ -877,7 +1013,7 @@ script:
           if (id(time_synced).state) {
             id(last_run_finished_epoch) = (uint32_t)id(effective_now_epoch).state;
           }
-          if (id(any_alarm_latched)) {
+          if (id(run_cancel_requested)) {
             id(last_run_outcome_str) = "cancelled_" + id(run_cancel_cause);
           } else {
             id(last_run_outcome_str) = "completed";
@@ -908,12 +1044,14 @@ interval:
           static uint32_t high_flow_first_ms = 0;
           static uint32_t low_psi_first_ms = 0;
           static uint32_t high_psi_first_ms = 0;
+          static uint32_t no_flow_first_ms = 0;
           uint32_t now_ms = millis();
           uint32_t since_zone_start_ms = now_ms - id(zone_started_at_ms);
+          uint32_t startup_grace_ms = (uint32_t)(id(no_flow_grace_s).state * 1000);
 
-          // No-flow (after grace period).
+          // No-flow: wait for startup grace, then require sustained low GPM.
           if (id(gate_alarm_no_flow).state &&
-              since_zone_start_ms >= (uint32_t)(id(no_flow_grace_s).state * 1000)) {
+              since_zone_start_ms >= startup_grace_ms) {
             float min_gpm = 1.0f;
             switch (id(currently_on_zone)) {
               case 1: min_gpm = id(zone_1_min_flow_gpm).state; break;
@@ -926,11 +1064,18 @@ interval:
               case 8: min_gpm = id(zone_8_min_flow_gpm).state; break;
             }
             if (gpm < min_gpm) {
-              id(alarm_no_flow).publish_state(true);
-              id(any_alarm_latched) = true;
-              id(run_cancel_requested) = true;
-              id(run_cancel_cause) = "no_flow";
+              if (no_flow_first_ms == 0) no_flow_first_ms = now_ms;
+              if (now_ms - no_flow_first_ms >= (uint32_t)(id(no_flow_sustain_s).state * 1000)) {
+                id(alarm_no_flow).publish_state(true);
+                id(run_cancel_requested) = true;
+                id(run_cancel_cause) = "no_flow";
+                no_flow_first_ms = 0;
+              }
+            } else {
+              no_flow_first_ms = 0;
             }
+          } else {
+            no_flow_first_ms = 0;
           }
 
           // High flow (sustained for grace_s).
@@ -949,7 +1094,6 @@ interval:
             if (high_flow_first_ms == 0) high_flow_first_ms = now_ms;
             if (now_ms - high_flow_first_ms >= (uint32_t)(id(high_flow_grace_s).state * 1000)) {
               id(alarm_high_flow).publish_state(true);
-              id(any_alarm_latched) = true;
               id(run_cancel_requested) = true;
               id(run_cancel_cause) = "high_flow";
               high_flow_first_ms = 0;
@@ -958,7 +1102,7 @@ interval:
             high_flow_first_ms = 0;
           }
 
-          // Low pressure (after 30s, sustained 5s).
+          // Low running pressure: same startup grace as no-flow, then sustained low PSI.
           float p = id(pressure_psi).state;
           float min_running_psi = id(pressure_running_min_psi).state;
           uint32_t min_running_psi_grace_s = 5;
@@ -972,12 +1116,11 @@ interval:
             case 7: min_running_psi = id(zone_7_minimum_running_psi).state; min_running_psi_grace_s = (uint32_t)id(zone_7_minimum_running_psi_grace_seconds).state; break;
             case 8: min_running_psi = id(zone_8_minimum_running_psi).state; min_running_psi_grace_s = (uint32_t)id(zone_8_minimum_running_psi_grace_seconds).state; break;
           }
-          if (id(gate_alarm_low_pressure).state && since_zone_start_ms >= 30 * 1000) {
+          if (id(gate_alarm_low_pressure).state && since_zone_start_ms >= startup_grace_ms) {
             if (p < min_running_psi) {
               if (low_psi_first_ms == 0) low_psi_first_ms = now_ms;
               if (now_ms - low_psi_first_ms >= min_running_psi_grace_s * 1000) {
                 id(alarm_low_pressure).publish_state(true);
-                id(any_alarm_latched) = true;
                 id(run_cancel_requested) = true;
                 id(run_cancel_cause) = "low_pressure";
                 low_psi_first_ms = 0;
@@ -992,7 +1135,6 @@ interval:
             if (high_psi_first_ms == 0) high_psi_first_ms = now_ms;
             if (now_ms - high_psi_first_ms >= 10 * 1000) {
               id(alarm_high_pressure).publish_state(true);
-              id(any_alarm_latched) = true;
               if (id(high_pressure_cancels_run).state) {
                 id(run_cancel_requested) = true;
                 id(run_cancel_cause) = "high_pressure";

@@ -1,19 +1,18 @@
-# Persisted per-zone lifetime totals only; last-run snapshots and daily
-# aggregates are RAM-only (recomputed after reboot).
+# Lifetime totals and last-run snapshots are RAM-only; HA records changes if needed.
 
 globals:
-  # --- Per zone, persisted ---
+  # --- Per zone, RAM-only (HA may archive via sensors) ---
   - id: zone_1_run_count_total
     type: uint32_t
-    restore_value: true
+    restore_value: false
     initial_value: '0'
   - id: zone_1_gallons_total
     type: float
-    restore_value: true
+    restore_value: false
     initial_value: '0'
   - id: zone_1_seconds_total
     type: uint32_t
-    restore_value: true
+    restore_value: false
     initial_value: '0'
   - id: zone_1_last_gallons
     type: float
@@ -30,15 +29,15 @@ globals:
 
   - id: zone_2_run_count_total
     type: uint32_t
-    restore_value: true
+    restore_value: false
     initial_value: '0'
   - id: zone_2_gallons_total
     type: float
-    restore_value: true
+    restore_value: false
     initial_value: '0'
   - id: zone_2_seconds_total
     type: uint32_t
-    restore_value: true
+    restore_value: false
     initial_value: '0'
   - id: zone_2_last_gallons
     type: float
@@ -55,15 +54,15 @@ globals:
 
   - id: zone_3_run_count_total
     type: uint32_t
-    restore_value: true
+    restore_value: false
     initial_value: '0'
   - id: zone_3_gallons_total
     type: float
-    restore_value: true
+    restore_value: false
     initial_value: '0'
   - id: zone_3_seconds_total
     type: uint32_t
-    restore_value: true
+    restore_value: false
     initial_value: '0'
   - id: zone_3_last_gallons
     type: float
@@ -80,15 +79,15 @@ globals:
 
   - id: zone_4_run_count_total
     type: uint32_t
-    restore_value: true
+    restore_value: false
     initial_value: '0'
   - id: zone_4_gallons_total
     type: float
-    restore_value: true
+    restore_value: false
     initial_value: '0'
   - id: zone_4_seconds_total
     type: uint32_t
-    restore_value: true
+    restore_value: false
     initial_value: '0'
   - id: zone_4_last_gallons
     type: float
@@ -105,15 +104,15 @@ globals:
 
   - id: zone_5_run_count_total
     type: uint32_t
-    restore_value: true
+    restore_value: false
     initial_value: '0'
   - id: zone_5_gallons_total
     type: float
-    restore_value: true
+    restore_value: false
     initial_value: '0'
   - id: zone_5_seconds_total
     type: uint32_t
-    restore_value: true
+    restore_value: false
     initial_value: '0'
   - id: zone_5_last_gallons
     type: float
@@ -130,15 +129,15 @@ globals:
 
   - id: zone_6_run_count_total
     type: uint32_t
-    restore_value: true
+    restore_value: false
     initial_value: '0'
   - id: zone_6_gallons_total
     type: float
-    restore_value: true
+    restore_value: false
     initial_value: '0'
   - id: zone_6_seconds_total
     type: uint32_t
-    restore_value: true
+    restore_value: false
     initial_value: '0'
   - id: zone_6_last_gallons
     type: float
@@ -155,15 +154,15 @@ globals:
 
   - id: zone_7_run_count_total
     type: uint32_t
-    restore_value: true
+    restore_value: false
     initial_value: '0'
   - id: zone_7_gallons_total
     type: float
-    restore_value: true
+    restore_value: false
     initial_value: '0'
   - id: zone_7_seconds_total
     type: uint32_t
-    restore_value: true
+    restore_value: false
     initial_value: '0'
   - id: zone_7_last_gallons
     type: float
@@ -180,15 +179,15 @@ globals:
 
   - id: zone_8_run_count_total
     type: uint32_t
-    restore_value: true
+    restore_value: false
     initial_value: '0'
   - id: zone_8_gallons_total
     type: float
-    restore_value: true
+    restore_value: false
     initial_value: '0'
   - id: zone_8_seconds_total
     type: uint32_t
-    restore_value: true
+    restore_value: false
     initial_value: '0'
   - id: zone_8_last_gallons
     type: float
@@ -576,64 +575,6 @@ sensor:
     update_interval: 60s
     accuracy_decimals: 0
     lambda: 'return (float)id(zone_8_last_run_at);'
-
-  # Gallons-target progress readouts.
-  - platform: template
-    name: "Zone 1 cycle delivered gallons"
-    id: zone_1_cycle_delivered_gallons_sensor
-    update_interval: 10s
-    accuracy_decimals: 1
-    unit_of_measurement: "gal"
-    lambda: 'return id(zone_1_cycle_delivered_gallons);'
-  - platform: template
-    name: "Zone 2 cycle delivered gallons"
-    id: zone_2_cycle_delivered_gallons_sensor
-    update_interval: 10s
-    accuracy_decimals: 1
-    unit_of_measurement: "gal"
-    lambda: 'return id(zone_2_cycle_delivered_gallons);'
-  - platform: template
-    name: "Zone 3 cycle delivered gallons"
-    id: zone_3_cycle_delivered_gallons_sensor
-    update_interval: 10s
-    accuracy_decimals: 1
-    unit_of_measurement: "gal"
-    lambda: 'return id(zone_3_cycle_delivered_gallons);'
-  - platform: template
-    name: "Zone 4 cycle delivered gallons"
-    id: zone_4_cycle_delivered_gallons_sensor
-    update_interval: 10s
-    accuracy_decimals: 1
-    unit_of_measurement: "gal"
-    lambda: 'return id(zone_4_cycle_delivered_gallons);'
-  - platform: template
-    name: "Zone 5 cycle delivered gallons"
-    id: zone_5_cycle_delivered_gallons_sensor
-    update_interval: 10s
-    accuracy_decimals: 1
-    unit_of_measurement: "gal"
-    lambda: 'return id(zone_5_cycle_delivered_gallons);'
-  - platform: template
-    name: "Zone 6 cycle delivered gallons"
-    id: zone_6_cycle_delivered_gallons_sensor
-    update_interval: 10s
-    accuracy_decimals: 1
-    unit_of_measurement: "gal"
-    lambda: 'return id(zone_6_cycle_delivered_gallons);'
-  - platform: template
-    name: "Zone 7 cycle delivered gallons"
-    id: zone_7_cycle_delivered_gallons_sensor
-    update_interval: 10s
-    accuracy_decimals: 1
-    unit_of_measurement: "gal"
-    lambda: 'return id(zone_7_cycle_delivered_gallons);'
-  - platform: template
-    name: "Zone 8 cycle delivered gallons"
-    id: zone_8_cycle_delivered_gallons_sensor
-    update_interval: 10s
-    accuracy_decimals: 1
-    unit_of_measurement: "gal"
-    lambda: 'return id(zone_8_cycle_delivered_gallons);'
 
   - platform: template
     name: "Zone 1 cycle goal gallons"

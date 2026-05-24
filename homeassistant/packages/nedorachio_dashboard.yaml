@@ -63,25 +63,25 @@ cards:
   - type: entities
     title: Gallons target progress
     entities:
-      - entity: sensor.nedorachio_irrigation_controller_zone_1_cycle_delivered_gallons
+      - entity: number.nedorachio_irrigation_controller_zone_1_cycle_delivered_gallons
         name: Zone 1 delivered this cycle
       - entity: sensor.nedorachio_irrigation_controller_zone_1_cycle_remaining_gallons
         name: Zone 1 remaining this cycle
       - entity: sensor.nedorachio_irrigation_controller_zone_1_cycle_progress
         name: Zone 1 cycle progress %
-      - entity: sensor.nedorachio_irrigation_controller_zone_2_cycle_delivered_gallons
+      - entity: number.nedorachio_irrigation_controller_zone_2_cycle_delivered_gallons
         name: Zone 2 delivered this cycle
       - entity: sensor.nedorachio_irrigation_controller_zone_2_cycle_remaining_gallons
         name: Zone 2 remaining this cycle
       - entity: sensor.nedorachio_irrigation_controller_zone_2_cycle_progress
         name: Zone 2 cycle progress %
-      - entity: sensor.nedorachio_irrigation_controller_zone_3_cycle_delivered_gallons
+      - entity: number.nedorachio_irrigation_controller_zone_3_cycle_delivered_gallons
         name: Zone 3 delivered this cycle
       - entity: sensor.nedorachio_irrigation_controller_zone_3_cycle_remaining_gallons
         name: Zone 3 remaining this cycle
       - entity: sensor.nedorachio_irrigation_controller_zone_3_cycle_progress
         name: Zone 3 cycle progress %
-      - entity: sensor.nedorachio_irrigation_controller_zone_4_cycle_delivered_gallons
+      - entity: number.nedorachio_irrigation_controller_zone_4_cycle_delivered_gallons
         name: Zone 4 delivered this cycle
       - entity: sensor.nedorachio_irrigation_controller_zone_4_cycle_remaining_gallons
         name: Zone 4 remaining this cycle

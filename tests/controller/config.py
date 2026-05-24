@@ -51,6 +51,7 @@ class ControllerConfig:
     pulses_per_gallon: float = 344.4
     phantom_flow_gpm: float = 0.5
     no_flow_grace_s: float = 60.0
+    no_flow_sustain_s: float = 30.0
     high_flow_grace_s: float = 30.0
 
     gate_rain_sensor: bool = True

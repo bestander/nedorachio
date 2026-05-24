@@ -87,6 +87,43 @@ class TestPlanningAndExecution:
 class TestLowPressureMidRun:
     """Delays and restarts when pressure drops during watering."""
 
+    def test_stale_latched_fault_auto_clears_on_scheduled_retry(self):
+        h = IrrigationHarness.fast_test(zones=1)
+        h.make_zone_due(1)
+        h.sim.any_alarm_latched = True
+        h.sim.alarms.add("no_flow")
+
+        h.advance(65)
+        h.advance_until_idle()
+
+        assert h.last_run_outcome == "completed"
+        assert not h.sim.any_alarm_latched
+
+    def test_no_flow_cancel_retries_after_cooldown_without_manual_clear(self):
+        h = IrrigationHarness.fast_test(zones=1)
+        h.make_zone_due(1)
+        h.advance(65)
+
+        if h.currently_running_zone != 1:
+            pytest.skip("Run did not start")
+
+        h.set_no_flow_while_running()
+        h.advance(20)
+        h.assert_cancelled(1, "no_flow")
+        assert not h.sim.any_alarm_latched
+        assert h.next_due_zone == 1
+
+        fires_before = len(h.events_of(EventType.SCHEDULE_FIRE))
+        h.advance(60)
+        assert len(h.events_of(EventType.SCHEDULE_FIRE)) == fires_before
+
+        h.set_pressure_running(45.0)
+        h.set_flow_gpm(5.0)
+        h.advance(120)
+        assert len(h.events_of(EventType.SCHEDULE_FIRE)) > fires_before
+        h.advance_until_idle()
+        assert h.last_run_outcome == "completed"
+
     def test_low_running_pressure_cancels_and_respects_cooldown(self):
         h = IrrigationHarness.fast_test(zones=1)
         h.make_zone_due(1)
@@ -97,26 +134,28 @@ class TestLowPressureMidRun:
         assert h.currently_running_zone == 1 or h.last_run_outcome == "completed"
 
         if h.last_run_outcome != "completed":
-            # Drop running pressure after grace window (30s + 5s sustained).
+            # Drop running pressure after startup grace + sustained low PSI.
             h.set_pressure_running(15.0)
-            h.advance(40)
+            h.advance(20)
             h.assert_cancelled(1, "low_pressure")
+            assert not h.sim.any_alarm_latched
             fires_before = len(h.events_of(EventType.SCHEDULE_FIRE))
 
             # Zone stays cadence-due after incomplete cancel.
             assert h.next_due_zone == 1
             h.set_pressure_static(50.0)
             h.set_pressure_running(45.0)
-            h.clear_fault()
             h.advance(60)
             new_fires = h.events_of(EventType.SCHEDULE_FIRE)[fires_before:]
             assert not new_fires, "Should not fire during cooldown"
 
-            # After cooldown, should fire again.
+            # After cooldown, auto-clear latched fault and fire again.
             fires_before = len(h.events_of(EventType.SCHEDULE_FIRE))
-            h.advance(90)
+            h.advance(120)
             new_fires = h.events_of(EventType.SCHEDULE_FIRE)[fires_before:]
             assert new_fires
+            h.advance_until_idle()
+            assert h.last_run_outcome == "completed"
 
     def test_start_pressure_out_of_bounds_cancels_immediately(self):
         h = IrrigationHarness.fast_test(zones=1)
@@ -205,8 +244,20 @@ class TestNoFlowCancel:
 
         if h.currently_running_zone == 1:
             h.set_no_flow_while_running()
-            h.advance(15)
+            h.advance(20)  # startup grace (10s) + sustain (5s)
             h.assert_cancelled(1, "no_flow")
+
+    def test_zero_gpm_during_startup_grace_does_not_cancel(self):
+        h = IrrigationHarness.fast_test(zones=1)
+        h.make_zone_due(1)
+        h.advance(65)
+        if h.currently_running_zone != 1:
+            pytest.skip("Run did not start")
+
+        h.set_no_flow_while_running()
+        h.advance(8)  # still inside 10s startup grace
+        assert h.currently_running_zone == 1
+        assert not h.sim.run.cancel_requested
 
 
 class TestCancelCadenceInteraction:

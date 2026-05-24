@@ -14,7 +14,7 @@ output:
 globals:
   - id: selected_zone
     type: int
-    restore_value: true
+    restore_value: false
     initial_value: '1'
 
 binary_sensor:

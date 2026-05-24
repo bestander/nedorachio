@@ -20,3 +20,4 @@ packages:
   schedule: !include packages/06-schedule.yaml
   stats: !include packages/07-stats.yaml
   local: !include packages/08-local-controls.yaml
+  ha_state: !include packages/09-ha-state.yaml

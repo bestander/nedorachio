@@ -16,6 +16,17 @@ from tests.controller.config import ControllerConfig, FALLBACK_START_EPOCH
 from tests.controller.mock_sensors import MockFlow, MockPressure, MockTime
 
 
+@dataclass(frozen=True)
+class BackgroundActivity:
+    """Counters from the simulator tick loop (proxy for ESP32 main-loop liveness)."""
+
+    ticks: int
+    safety_ticks: int
+    eval_ticks: int
+    plan_ticks: int
+    ticks_while_zone_on: int
+
+
 class EventType(enum.Enum):
     PREFLIGHT_FAIL = "preflight_fail"
     PREFLIGHT_SKIP = "preflight_skip"
@@ -113,6 +124,10 @@ class ControllerSimulator:
         self._script: Optional[Iterator] = None
         self._script_name: str = ""
         self._tick_count: int = 0
+        self._safety_tick_count: int = 0
+        self._eval_tick_count: int = 0
+        self._plan_tick_count: int = 0
+        self._ticks_while_zone_on: int = 0
         self._events: list[SimEvent] = []
 
         # Mid-run cancel debounce state (1s safety interval).
@@ -120,6 +135,7 @@ class ControllerSimulator:
         self._low_psi_first_ms: int = 0
         self._high_psi_first_ms: int = 0
         self._phantom_first_ms: int = 0
+        self._no_flow_first_ms: int = 0
 
     # ------------------------------------------------------------------ API
     @property
@@ -150,6 +166,15 @@ class ControllerSimulator:
     def is_script_running(self) -> bool:
         return self._script is not None
 
+    def background_activity(self) -> BackgroundActivity:
+        return BackgroundActivity(
+            ticks=self._tick_count,
+            safety_ticks=self._safety_tick_count,
+            eval_ticks=self._eval_tick_count,
+            plan_ticks=self._plan_tick_count,
+            ticks_while_zone_on=self._ticks_while_zone_on,
+        )
+
     def tick(self) -> None:
         """Advance simulation by one second."""
         self.clock.advance(1)
@@ -158,12 +183,18 @@ class ControllerSimulator:
 
         self.flow.tick(self.currently_on_zone != 0, now_ms)
         self._run_safety_1s(now_ms)
+        self._safety_tick_count += 1
         self._run_runtime_cap_1s(now_ms)
+
+        if self.currently_on_zone != 0:
+            self._ticks_while_zone_on += 1
 
         if self._tick_count % self.PLAN_INTERVAL == 0:
             self._update_plan_readout()
+            self._plan_tick_count += 1
         if self._tick_count % self.EVAL_INTERVAL == 0:
             self._cadence_evaluator()
+            self._eval_tick_count += 1
 
         # Scripts step last so evaluator fires can progress in the same tick.
         self._step_script()
@@ -175,6 +206,18 @@ class ControllerSimulator:
     def clear_fault(self) -> None:
         self.any_alarm_latched = False
         self.alarms.clear()
+
+    def clear_recoverable_alarms(self) -> None:
+        self.alarms -= {
+            "preflight",
+            "no_flow",
+            "high_flow",
+            "low_pressure",
+            "high_pressure",
+            "runtime_exceeded",
+        }
+        if "phantom_flow" not in self.alarms:
+            self.any_alarm_latched = False
 
     # ---------------------------------------------------------------- events
     def _emit(self, kind: EventType, detail: str = "", zone_id: int = 0) -> None:
@@ -213,6 +256,7 @@ class ControllerSimulator:
             self._high_flow_first_ms = 0
             self._low_psi_first_ms = 0
             self._high_psi_first_ms = 0
+            self._no_flow_first_ms = 0
             self._emit(EventType.ZONE_ON, zone_id=zone_id)
         elif self.currently_on_zone == zone_id:
             now_e = self.clock.epoch
@@ -297,12 +341,13 @@ class ControllerSimulator:
                 "rain_forecast_hold",
                 "pressure_too_low",
                 "pressure_too_high",
+                "alarm_latched",
             }
             if benign:
                 self._emit(EventType.PREFLIGHT_SKIP, self.pre_flight_reason)
             else:
                 self._emit(EventType.PREFLIGHT_FAIL, self.pre_flight_reason)
-                self._latch_alarm("preflight")
+                self._signal_alarm("preflight", blocking=False)
         yield Tick
 
     # -------------------------------------------------------- run_one_zone (time)
@@ -310,6 +355,7 @@ class ControllerSimulator:
         self, zone_id: int, total_min: float, cycle_min: float, soak_min: float
     ) -> Generator:
         zcfg = self.config.zone(zone_id)
+        zs = self.zones[zone_id - 1]
         self.stamp_cadence_on_zone_off = True
         self.run = RunState(
             zone_id=zone_id,
@@ -351,6 +397,8 @@ class ControllerSimulator:
 
         self.stamp_cadence_on_zone_off = not self.run.cancel_requested
         self._drive_zone(zone_id, False)
+        if not self.run.cancel_requested and self.clock.epoch > 0:
+            zs.last_finished_epoch = self.clock.epoch
         if self.run.cancel_requested:
             self._emit(EventType.RUN_CANCEL, self.run.cancel_cause, zone_id)
         else:
@@ -364,6 +412,7 @@ class ControllerSimulator:
     def _schedule_fire_handler(self) -> Generator:
         zid = self.due_zone_id
         self._set_schedule_gate("none", 0)
+        self.clear_recoverable_alarms()
         yield from self._run_pre_flight(is_schedule=True)
         if not self.pre_flight_passed:
             self.due_zone_id = 0
@@ -386,7 +435,7 @@ class ControllerSimulator:
         if self.config.time_synced:
             self.last_run_finished_epoch = self.clock.epoch
 
-        if self.any_alarm_latched:
+        if self.run.cancel_requested:
             self.last_run_outcome = f"cancelled_{self.run.cancel_cause}"
         else:
             self.last_run_outcome = "completed"
@@ -408,13 +457,14 @@ class ControllerSimulator:
     ) -> Generator:
         zcfg = self.config.zone(zone_id)
         zs = self.zones[zone_id - 1]
+        run_base = zs.cycle_delivered_gallons
         self.stamp_cadence_on_zone_off = True
         self.run = RunState(
             zone_id=zone_id,
             soak_min=soak_min,
             goal_gallons=goal,
             cycle_gallons=cycle_gal,
-            gallons_done=zs.cycle_delivered_gallons,
+            gallons_done=run_base,
             schedule_mode=1,
             started_pulses=self.flow.pulses_total,
             started_ms=self.clock.boot_ms,
@@ -437,8 +487,13 @@ class ControllerSimulator:
                 chunk_pulses = max(0, self.flow.pulses_total - chunk_start)
                 run_gal = run_pulses / ppg if ppg > 0 else 0.0
                 chunk_gal = chunk_pulses / ppg if ppg > 0 else 0.0
-                self.run.gallons_done = zs.cycle_delivered_gallons + run_gal
-                if self.run.gallons_done >= goal or chunk_gal >= cycle_gal:
+                self.run.gallons_done = run_base + run_gal
+                zs.cycle_delivered_gallons = self.run.gallons_done
+                if self.run.gallons_done >= goal:
+                    break
+                remaining = goal - self.run.gallons_done
+                chunk_limit = min(cycle_gal, remaining) if remaining > 0 else 0.0
+                if chunk_gal >= chunk_limit:
                     break
 
             self.stamp_cadence_on_zone_off = False
@@ -457,6 +512,12 @@ class ControllerSimulator:
         zs.cycle_delivered_gallons = (
             0.0 if self.run.gallons_done >= goal else self.run.gallons_done
         )
+        if (
+            not self.run.cancel_requested
+            and self.run.gallons_done >= goal
+            and self.clock.epoch > 0
+        ):
+            zs.last_finished_epoch = self.clock.epoch
         if self.run.cancel_requested:
             self._emit(EventType.RUN_CANCEL, self.run.cancel_cause, zone_id)
         else:
@@ -505,6 +566,9 @@ class ControllerSimulator:
 
     def _update_plan_readout(self) -> None:
         cfg = self.config
+        if self.currently_on_zone != 0:
+            return
+
         for zs in self.zones:
             zs.scheduled_next_epoch = 0
 
@@ -530,12 +594,17 @@ class ControllerSimulator:
 
         ideals.sort(key=lambda x: (x[0], x[1]))
 
-        cursor = self._snap_next(now) or now
+        cursor = 0
         dur_s = max(60, int(cfg.maximum_runtime_minutes * 60))
         assigned: dict[int, int] = {}
 
         for ideal, zid in ideals:
-            merged = max(ideal, cursor)
+            if ideal <= now:
+                merged = (now // 60) * 60
+            else:
+                merged = ideal
+            if cursor > merged:
+                merged = cursor
             actual = self._snap_next(merged)
             if not actual:
                 continue
@@ -599,10 +668,11 @@ class ControllerSimulator:
         self._start_script("schedule_fire_handler", self._schedule_fire_handler())
 
     # ----------------------------------------------------------- safety 1s
-    def _latch_alarm(self, name: str) -> None:
-        self.any_alarm_latched = True
+    def _signal_alarm(self, name: str, blocking: bool = False) -> None:
         self.alarms.add(name)
         self._emit(EventType.ALARM, name)
+        if blocking:
+            self.any_alarm_latched = True
 
     def _run_safety_1s(self, now_ms: int) -> None:
         cfg = self.config
@@ -616,7 +686,7 @@ class ControllerSimulator:
             if self._phantom_first_ms == 0:
                 self._phantom_first_ms = now_ms
             if now_ms - self._phantom_first_ms > 5 * 60 * 1000:
-                self._latch_alarm("phantom_flow")
+                self._signal_alarm("phantom_flow", blocking=True)
         else:
             self._phantom_first_ms = 0
 
@@ -626,18 +696,27 @@ class ControllerSimulator:
         since_start = now_ms - self.zone_started_at_ms
         zid = self.currently_on_zone
         zcfg = cfg.zone(zid)
+        startup_grace_ms = int(cfg.no_flow_grace_s * 1000)
 
-        if cfg.gate_alarm_no_flow and since_start >= cfg.no_flow_grace_s * 1000:
+        if cfg.gate_alarm_no_flow and since_start >= startup_grace_ms:
             if gpm < zcfg.min_flow_gpm:
-                self._latch_alarm("no_flow")
-                self.run.cancel_requested = True
-                self.run.cancel_cause = "no_flow"
+                if self._no_flow_first_ms == 0:
+                    self._no_flow_first_ms = now_ms
+                if now_ms - self._no_flow_first_ms >= int(cfg.no_flow_sustain_s * 1000):
+                    self._signal_alarm("no_flow")
+                    self.run.cancel_requested = True
+                    self.run.cancel_cause = "no_flow"
+                    self._no_flow_first_ms = 0
+            else:
+                self._no_flow_first_ms = 0
+        else:
+            self._no_flow_first_ms = 0
 
         if cfg.gate_alarm_high_flow and gpm > zcfg.max_flow_gpm:
             if self._high_flow_first_ms == 0:
                 self._high_flow_first_ms = now_ms
             if now_ms - self._high_flow_first_ms >= cfg.high_flow_grace_s * 1000:
-                self._latch_alarm("high_flow")
+                self._signal_alarm("high_flow")
                 self.run.cancel_requested = True
                 self.run.cancel_cause = "high_flow"
                 self._high_flow_first_ms = 0
@@ -647,12 +726,12 @@ class ControllerSimulator:
         p = self.pressure.read(zone_on=True)
         min_running = zcfg.minimum_running_psi
         grace_s = zcfg.minimum_running_psi_grace_seconds
-        if cfg.gate_alarm_low_pressure and since_start >= 30_000:
+        if cfg.gate_alarm_low_pressure and since_start >= startup_grace_ms:
             if p < min_running:
                 if self._low_psi_first_ms == 0:
                     self._low_psi_first_ms = now_ms
                 if now_ms - self._low_psi_first_ms >= grace_s * 1000:
-                    self._latch_alarm("low_pressure")
+                    self._signal_alarm("low_pressure")
                     self.run.cancel_requested = True
                     self.run.cancel_cause = "low_pressure"
                     self._low_psi_first_ms = 0
@@ -663,7 +742,7 @@ class ControllerSimulator:
             if self._high_psi_first_ms == 0:
                 self._high_psi_first_ms = now_ms
             if now_ms - self._high_psi_first_ms >= 10_000:
-                self._latch_alarm("high_pressure")
+                self._signal_alarm("high_pressure")
                 if cfg.high_pressure_cancels_run:
                     self.run.cancel_requested = True
                     self.run.cancel_cause = "high_pressure"
@@ -684,4 +763,4 @@ class ControllerSimulator:
         if elapsed_ms > cap_ms:
             zid = self.currently_on_zone
             self._drive_zone(zid, False)
-            self._latch_alarm("runtime_exceeded")
+            self._signal_alarm("runtime_exceeded")

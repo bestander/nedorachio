@@ -131,14 +131,14 @@ switch:
     name: "Master enable"
     id: master_enable
     optimistic: true
-    restore_mode: RESTORE_DEFAULT_ON
+    restore_mode: DISABLED
     icon: mdi:water-pump
 
   - platform: template
     name: "Emergency stop (latched)"
     id: emergency_stop_latched
     optimistic: true
-    restore_mode: ALWAYS_OFF
+    restore_mode: DISABLED
 
 # State globals. `zone_N_actual_state` reflects the *real* relay state, which
 # the safety layer maintains; the public switch reads it via `lambda:`.
@@ -193,44 +193,39 @@ globals:
     restore_value: false
     initial_value: 'true'
 
-  # Per-zone "last finished" epoch — the cadence scheduler reads these to
-  # decide whether a zone is due. Written by `drive_zone` whenever a zone
-  # transitions on→off, regardless of whether it was a scheduled run, manual
-  # toggle, or local button press. Persisted to NVS so cadence survives reboot.
-  # Default is the same baseline date as `fallback_start_epoch_est` so a fresh
-  # device behaves as if each zone was last watered at that baseline.
+  # Per-zone "last finished" epoch — cadence scheduler input (RAM; device-owned).
   - id: zone_1_last_finished_epoch
     type: uint32_t
-    restore_value: true
-    initial_value: '1780329600'
+    restore_value: false
+    initial_value: '0'
   - id: zone_2_last_finished_epoch
     type: uint32_t
-    restore_value: true
-    initial_value: '1780329600'
+    restore_value: false
+    initial_value: '0'
   - id: zone_3_last_finished_epoch
     type: uint32_t
-    restore_value: true
-    initial_value: '1780329600'
+    restore_value: false
+    initial_value: '0'
   - id: zone_4_last_finished_epoch
     type: uint32_t
-    restore_value: true
-    initial_value: '1780329600'
+    restore_value: false
+    initial_value: '0'
   - id: zone_5_last_finished_epoch
     type: uint32_t
-    restore_value: true
-    initial_value: '1780329600'
+    restore_value: false
+    initial_value: '0'
   - id: zone_6_last_finished_epoch
     type: uint32_t
-    restore_value: true
-    initial_value: '1780329600'
+    restore_value: false
+    initial_value: '0'
   - id: zone_7_last_finished_epoch
     type: uint32_t
-    restore_value: true
-    initial_value: '1780329600'
+    restore_value: false
+    initial_value: '0'
   - id: zone_8_last_finished_epoch
     type: uint32_t
-    restore_value: true
-    initial_value: '1780329600'
+    restore_value: false
+    initial_value: '0'
 
 # Buttons exposed to HA.
 button:
@@ -333,6 +328,73 @@ script:
             case 8: id(zone_8).publish_state(id(zone_8_actual_state)); break;
           }
 
+  - id: stamp_zone_last_finished
+    mode: queued
+    parameters:
+      zone_id: int
+    then:
+      - lambda: |-
+          uint32_t now_e = (uint32_t)id(effective_now_epoch).state;
+          if (now_e == 0)
+            return;
+          switch (zone_id) {
+            case 1: id(zone_1_last_finished_epoch) = now_e; break;
+            case 2: id(zone_2_last_finished_epoch) = now_e; break;
+            case 3: id(zone_3_last_finished_epoch) = now_e; break;
+            case 4: id(zone_4_last_finished_epoch) = now_e; break;
+            case 5: id(zone_5_last_finished_epoch) = now_e; break;
+            case 6: id(zone_6_last_finished_epoch) = now_e; break;
+            case 7: id(zone_7_last_finished_epoch) = now_e; break;
+            case 8: id(zone_8_last_finished_epoch) = now_e; break;
+          }
+          id(last_completed_zone) = zone_id;
+          ESP_LOGI("zones", "Zone %d cadence stamped (last finished epoch %u)", zone_id, now_e);
+
+  - id: heal_zone_cadence
+    mode: queued
+    then:
+      - lambda: |-
+          uint32_t now_e = (uint32_t) id(effective_now_epoch).state;
+          uint32_t lrf = id(last_run_finished_epoch);
+          int completed = id(last_completed_zone);
+
+          auto heal = [&](int zid, uint32_t &lf, uint32_t lra, float goal, float last_gal) {
+            if (lra > lf + 60u) {
+              ESP_LOGI("cadence", "Zone %d heal: last_finished %u -> last_run_at %u", zid, lf, lra);
+              lf = lra;
+              id(last_completed_zone) = zid;
+              return;
+            }
+            if (completed == zid && lrf > lf + 60u) {
+              ESP_LOGI("cadence", "Zone %d heal: last_finished %u -> last_run_finished %u", zid, lf, lrf);
+              lf = lrf;
+              return;
+            }
+            if (goal > 0.0f && last_gal >= goal * 0.85f && lra > lf + 60u) {
+              ESP_LOGI("cadence", "Zone %d heal: goal met (%.1f gal), last_finished %u -> %u",
+                       zid, last_gal, lf, lra);
+              lf = lra;
+              id(last_completed_zone) = zid;
+            }
+          };
+
+          heal(1, id(zone_1_last_finished_epoch), id(zone_1_last_run_at),
+               id(zone_1_goal_gallons_per_cycle).state, id(zone_1_last_gallons));
+          heal(2, id(zone_2_last_finished_epoch), id(zone_2_last_run_at),
+               id(zone_2_goal_gallons_per_cycle).state, id(zone_2_last_gallons));
+          heal(3, id(zone_3_last_finished_epoch), id(zone_3_last_run_at),
+               id(zone_3_goal_gallons_per_cycle).state, id(zone_3_last_gallons));
+          heal(4, id(zone_4_last_finished_epoch), id(zone_4_last_run_at),
+               id(zone_4_goal_gallons_per_cycle).state, id(zone_4_last_gallons));
+          heal(5, id(zone_5_last_finished_epoch), id(zone_5_last_run_at),
+               id(zone_5_goal_gallons_per_cycle).state, id(zone_5_last_gallons));
+          heal(6, id(zone_6_last_finished_epoch), id(zone_6_last_run_at),
+               id(zone_6_goal_gallons_per_cycle).state, id(zone_6_last_gallons));
+          heal(7, id(zone_7_last_finished_epoch), id(zone_7_last_run_at),
+               id(zone_7_goal_gallons_per_cycle).state, id(zone_7_last_gallons));
+          heal(8, id(zone_8_last_finished_epoch), id(zone_8_last_run_at),
+               id(zone_8_goal_gallons_per_cycle).state, id(zone_8_last_gallons));
+
   - id: turn_off_current_zone
     mode: single
     then:
@@ -368,6 +430,7 @@ esphome:
     priority: 800
     then:
       - script.execute: cancel_everything
+      - switch.turn_on: master_enable
 
 # Periodic safety: runtime cap (uses global `maximum_runtime_minutes` tunable).
 interval:

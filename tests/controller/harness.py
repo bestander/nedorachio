@@ -4,6 +4,19 @@ High-level test harness for irrigation controller E2E scenarios.
 Provides a readable API over ControllerSimulator + mock sensors so tests
 can express intent ("zone 1 is due, pressure drops mid-run") without
 re-implementing firmware tick logic.
+
+Testing strategy (two layers)
+-----------------------------
+1. **Simulator E2E** — exercises schedule/pre-flight/run logic with a
+   cooperative script model (same semantics as fixed firmware, not same
+   implementation). Catches plan drift, blackout gating, cooldown, recovery.
+
+2. **Firmware contracts** (`firmware_contract.py`) — static checks on real
+   ESPHome YAML. Catches ESP-specific anti-patterns the simulator cannot
+   model (e.g. blocking ``delay()`` inside a C++ lambda while-loop).
+
+Always add a firmware contract when fixing a bug that lived only in C++
+script/lambda code. Add simulator E2E when fixing schedule/state-machine logic.
 """
 
 from __future__ import annotations
@@ -15,7 +28,7 @@ from zoneinfo import ZoneInfo
 
 from tests.controller.config import ControllerConfig, ZoneConfig
 from tests.controller.mock_sensors import MockFlow, MockPressure, MockTime
-from tests.controller.simulator import ControllerSimulator, EventType, SimEvent
+from tests.controller.simulator import BackgroundActivity, ControllerSimulator, EventType, SimEvent
 
 
 def dt_epoch(
@@ -93,6 +106,7 @@ class IrrigationHarness:
             attempt_cooldown_minutes=2.0,
             maximum_runtime_minutes=5.0,
             no_flow_grace_s=10.0,
+            no_flow_sustain_s=5.0,
             schedule_start_hour=0,
             schedule_end_hour=23,
             schedule_end_minute=59,
@@ -107,6 +121,56 @@ class IrrigationHarness:
             clock=MockTime(epoch=start),
             pressure=MockPressure(static_psi=50.0, running_psi=45.0),
             flow=MockFlow(pulses_per_gallon=cfg.pulses_per_gallon, gpm_when_on=2.0),
+        )
+
+    @classmethod
+    def production_gallons(cls, zones: int = 4, **overrides) -> "IrrigationHarness":
+        """
+        Match ``homeassistant/packages/nedorachio_config.yaml`` defaults.
+
+        Uses compressed timings where safe (2-min cooldown, smaller gallon targets)
+        but keeps ``schedule_mode=gallons`` and the overnight watering window so
+        gallons-target regressions match production.
+        """
+        zone_cfgs = []
+        for i in range(8):
+            enabled = i < zones
+            z = ZoneConfig(
+                schedule_mode=1 if enabled else 0,
+                goal_gallons=20.0 if enabled else 0.0,
+                cycle_gallons=10.0 if enabled else 0.0,
+                soak_min=0.0,  # keep CI fast; production uses 15
+                min_interval_hours=72.0,
+                min_flow_gpm=0.2,
+                max_flow_gpm=12.0,
+                minimum_running_psi_grace_seconds=60,
+            )
+            zone_cfgs.append(z)
+
+        bitmask = (1 << zones) - 1
+        cfg = ControllerConfig(
+            zones=zone_cfgs,
+            zones_enabled_bitmask=bitmask,
+            attempt_cooldown_minutes=2.0,
+            maximum_runtime_minutes=60.0,
+            no_flow_grace_s=60.0,
+            no_flow_sustain_s=30.0,
+            schedule_start_hour=23,
+            schedule_start_minute=0,
+            schedule_end_hour=9,
+            schedule_end_minute=0,
+            blackout_weekday_bitmask=(1 << 3) | (1 << 4),  # thu, fri
+        )
+        for k, v in overrides.items():
+            if hasattr(cfg, k):
+                setattr(cfg, k, v)
+
+        start = dt_epoch(2026, 5, 23, 23, 30)  # Saturday night, in window
+        return cls(
+            config=cfg,
+            clock=MockTime(epoch=start),
+            pressure=MockPressure(static_psi=50.0, running_psi=45.0),
+            flow=MockFlow(pulses_per_gallon=cfg.pulses_per_gallon, gpm_when_on=2.5),
         )
 
     # ---------------------------------------------------------------- setup
@@ -142,6 +206,59 @@ class IrrigationHarness:
 
     def clear_fault(self) -> None:
         self.sim.clear_fault()
+
+    def background_activity(self) -> BackgroundActivity:
+        return self.sim.background_activity()
+
+    def advance_during_active_run(
+        self, seconds: int, *, min_eval_ticks: int = 1, min_plan_ticks: int = 1
+    ) -> BackgroundActivity:
+        """
+        Advance while a zone valve is open; assert background tasks keep ticking.
+
+        Proxy for ESP32 main-loop liveness during long gallons-target runs.
+        """
+        assert self.currently_running_zone > 0, (
+            f"No active run to monitor: {self.snapshot()}"
+        )
+        before = self.background_activity()
+        self.advance(seconds)
+        after = self.background_activity()
+        delta = BackgroundActivity(
+            ticks=after.ticks - before.ticks,
+            safety_ticks=after.safety_ticks - before.safety_ticks,
+            eval_ticks=after.eval_ticks - before.eval_ticks,
+            plan_ticks=after.plan_ticks - before.plan_ticks,
+            ticks_while_zone_on=after.ticks_while_zone_on - before.ticks_while_zone_on,
+        )
+        assert delta.ticks == seconds, f"Expected {seconds}s advance, got {delta.ticks}"
+        assert delta.safety_ticks == seconds, "1s safety interval must run every second"
+        assert delta.ticks_while_zone_on == seconds, "Zone should stay on entire interval"
+        assert delta.eval_ticks >= min_eval_ticks, (
+            f"Cadence evaluator stalled during run (delta eval_ticks={delta.eval_ticks})"
+        )
+        assert delta.plan_ticks >= min_plan_ticks, (
+            f"Plan readout stalled during run (delta plan_ticks={delta.plan_ticks})"
+        )
+        return delta
+
+    def assert_valve_opens_at_planned_time(self, zone_id: int, tolerance_s: int = 120) -> int:
+        """Plan must exist and schedule fire must open the valve near that epoch."""
+        self.advance(30)  # plan readout
+        planned = self.planned_start(zone_id)
+        assert planned > 0, f"No plan for zone {zone_id}: {self.snapshot()}"
+
+        fires_before = len(self.events_of(EventType.SCHEDULE_FIRE))
+        delta = max(0, planned - self.epoch)
+        self.advance(delta + 65)
+
+        fires = self.events_of(EventType.SCHEDULE_FIRE)[fires_before:]
+        assert fires, f"No schedule fire near plan {planned}: {self.snapshot()}"
+        assert abs(fires[0].at_epoch - planned) <= tolerance_s
+
+        zone_on = [e for e in self.events_of(EventType.ZONE_ON) if e.zone_id == zone_id]
+        assert zone_on, f"Zone {zone_id} valve never opened: {self.snapshot()}"
+        return fires[0].at_epoch
 
     # ----------------------------------------------------------------- motion
     def advance(self, seconds: int) -> None:

@@ -37,11 +37,10 @@ globals:
     type: uint32_t
     restore_value: false
     initial_value: '0'
-  # Persisted to NVS hourly while HA time is valid. Survives power loss so the
-  # fallback clock can pick up roughly where it left off instead of jumping back.
+  # RAM-only clock anchor while HA time is valid (HA restores via Last known epoch).
   - id: last_known_epoch
     type: uint32_t
-    restore_value: true
+    restore_value: false
     initial_value: '0'
   # Baseline locked in at first fallback-clock read this boot.
   - id: fallback_baseline_epoch

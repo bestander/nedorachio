@@ -173,6 +173,29 @@ class TestScheduleValveStateMachine:
         assert h.sim.schedule_gate_due_zone == 1
         assert not h.events_of(EventType.SCHEDULE_FIRE)
 
+    def test_due_zone_plan_stable_within_minute(self):
+        """Due zone plan must not slide forward every 30s plan tick."""
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+
+        tz = ZoneInfo("America/New_York")
+        start = dt_epoch(2026, 5, 23, 23, 4)
+        h = IrrigationHarness.fast_test(zones=4)
+        h.config.schedule_start_hour = 23
+        h.config.schedule_end_hour = 9
+        h.config.maximum_runtime_minutes = 60
+        h.clock.epoch = start
+        h.make_all_due([1])
+
+        h.advance(30)
+        plan_a = h.planned_start(1)
+        h.advance(20)  # same minute
+        plan_b = h.planned_start(1)
+        assert plan_a == plan_b, (
+            f"Plan drifted within minute: {datetime.fromtimestamp(plan_a, tz)} "
+            f"-> {datetime.fromtimestamp(plan_b, tz)}"
+        )
+
     def test_preflight_skip_keeps_valves_closed_until_pressure_recovers(self):
         """Low static pressure skips fire — valve stays closed; recovers next eval."""
         start = dt_epoch(2026, 6, 3, 6, 0)

@@ -1061,6 +1061,19 @@ number:
     max_value: 600
     step: 1
     unit_of_measurement: "s"
+    # Seconds after valve open before no-flow / running-pressure checks arm.
+
+  - platform: template
+    name: "No-flow sustain seconds"
+    id: no_flow_sustain_s
+    optimistic: true
+    restore_value: false
+    initial_value: 30
+    min_value: 5
+    max_value: 600
+    step: 1
+    unit_of_measurement: "s"
+    # After startup grace: GPM must stay below min this long before cancel.
 
   - platform: template
     name: "High-flow grace seconds"
@@ -1338,7 +1351,7 @@ switch:
     name: "Fallback schedule enabled"
     id: fallback_schedule_enabled
     optimistic: true
-    restore_mode: RESTORE_DEFAULT_ON
+    restore_mode: DISABLED
 
   # --- Sensor gate toggles ---
   # These let you disable specific sensor-driven protections while commissioning.
@@ -1346,54 +1359,60 @@ switch:
     name: "Gate: rain sensor"
     id: gate_rain_sensor
     optimistic: true
-    restore_mode: RESTORE_DEFAULT_ON
+    restore_mode: DISABLED
     internal: true
 
   - platform: template
     name: "Gate: static pressure preflight"
     id: gate_static_pressure_preflight
     optimistic: true
-    restore_mode: RESTORE_DEFAULT_ON
+    restore_mode: DISABLED
     internal: true
 
   - platform: template
     name: "Alarm gate: phantom flow"
     id: gate_alarm_phantom_flow
     optimistic: true
-    restore_mode: RESTORE_DEFAULT_ON
+    restore_mode: DISABLED
     internal: true
 
   - platform: template
     name: "Alarm gate: no flow"
     id: gate_alarm_no_flow
     optimistic: true
-    restore_mode: RESTORE_DEFAULT_ON
+    restore_mode: DISABLED
     internal: true
 
   - platform: template
     name: "Alarm gate: high flow"
     id: gate_alarm_high_flow
     optimistic: true
-    restore_mode: RESTORE_DEFAULT_ON
+    restore_mode: DISABLED
     internal: true
 
   - platform: template
     name: "Alarm gate: low pressure"
     id: gate_alarm_low_pressure
     optimistic: true
-    restore_mode: RESTORE_DEFAULT_ON
+    restore_mode: DISABLED
     internal: true
 
   - platform: template
     name: "Alarm gate: high pressure"
     id: gate_alarm_high_pressure
     optimistic: true
-    restore_mode: RESTORE_DEFAULT_ON
+    restore_mode: DISABLED
     internal: true
 
   - platform: template
     name: "High pressure cancels run"
     id: high_pressure_cancels_run
     optimistic: true
-    restore_mode: RESTORE_DEFAULT_OFF
+    restore_mode: DISABLED
     internal: true
+
+esphome:
+  on_boot:
+    priority: 700
+    then:
+      - switch.turn_on: fallback_schedule_enabled
