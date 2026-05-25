@@ -42,6 +42,11 @@ views:
             name: Last stop was flow/pressure fault
           - entity: binary_sensor.nedorachio_irrigation_controller_rain_sensor
             name: Rain sensor
+          - type: divider
+          - entity: sensor.openweathermap_rain_intensity
+            name: Rain intensity (OpenWeatherMap)
+          - entity: sensor.nedorachio_rain_observed_48h
+            name: Rain observed 48h
       - type: entities
         title: Last watering (HA)
         entities:

@@ -12,6 +12,10 @@
 # persisted in flash, and exposed as total_increasing sensors. HA mirrors them as
 # template sensors and computes rolling 7-day totals via statistics sensors.
 #
+# Rain hold: expects sensor.openweathermap_rain_intensity (falls back to
+# sensor.openweathermap_rain). Package builds sensor.nedorachio_rain_observed_48h
+# and pushes it to the ESP.
+#
 # Requires: homeassistant: packages: !include_dir_named packages
 
 input_text:
@@ -58,6 +62,29 @@ input_text:
 
 template:
   - sensor:
+      - name: "Nedorachio rain intensity input"
+        unique_id: nedorachio_rain_intensity_input_v1
+        unit_of_measurement: mm/h
+        state: >-
+          {% set preferred = 'sensor.openweathermap_rain_intensity' %}
+          {% set fallback = 'sensor.openweathermap_rain' %}
+          {% if states(preferred) not in ['unknown','unavailable','none', None] %}
+            {{ states(preferred) | float(0) }}
+          {% elif states(fallback) not in ['unknown','unavailable','none', None] %}
+            {{ states(fallback) | float(0) }}
+          {% else %}
+            0
+          {% endif %}
+      - name: "Nedorachio rain observed 48h"
+        unique_id: nedorachio_rain_observed_48h_v1
+        unit_of_measurement: mm
+        state: >-
+          {% set rolling = 'sensor.nedorachio_rain_observed_48h_rolling' %}
+          {% if states(rolling) not in ['unknown','unavailable','none', None] %}
+            {{ states(rolling) | float(0) | round(1) }}
+          {% else %}
+            0
+          {% endif %}
       - name: "Nedorachio zone 1 last watering epoch"
         unique_id: nedorachio_zone_1_last_watering_epoch_v1
         state: "{{ states('input_text.nedorachio_zone_1_last_watering') | int(0) }}"
@@ -397,6 +424,16 @@ template:
 
 sensor:
   - platform: statistics
+    name: "Nedorachio rain observed 48h rolling"
+    unique_id: nedorachio_rain_observed_48h_rolling_v1
+    entity_id: sensor.nedorachio_rain_intensity_input
+    state_characteristic: sum
+    max_age:
+      hours: 48
+    sampling_size: 9999
+    precision: 1
+    unit_of_measurement: mm
+  - platform: statistics
     name: "Nedorachio zone 1 gallons 7d rolling"
     unique_id: nedorachio_zone_1_gallons_7d_rolling_v1
     entity_id: sensor.nedorachio_zone_1_gallons_lifetime
@@ -483,10 +520,12 @@ automation:
     trigger:
       - platform: time_pattern
         minutes: "/10"
+      - platform: state
+        entity_id: sensor.nedorachio_rain_observed_48h
     action:
       - variables:
           rain_mm: >-
-            {% set obs_id = 'sensor.rain_observed_48h' %}
+            {% set obs_id = 'sensor.nedorachio_rain_observed_48h' %}
             {% if states(obs_id) not in ['unknown','unavailable','none', None] %}
               {{ states(obs_id) | float(0) }}
             {% else %}

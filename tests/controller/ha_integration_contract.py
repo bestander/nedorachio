@@ -186,6 +186,24 @@ def check_ha_gallons_tracking() -> list[str]:
     return violations
 
 
+def check_ha_rain_hold_wiring() -> list[str]:
+    text = _read(HA_PACKAGE)
+    violations: list[str] = []
+    if "sensor.openweathermap_rain_intensity" not in text:
+        violations.append("HA package must expect sensor.openweathermap_rain_intensity as rain input")
+    if "nedorachio_rain_intensity_input_v1" not in text:
+        violations.append("Missing template sensor nedorachio_rain_intensity_input")
+    if "nedorachio_rain_observed_48h_rolling_v1" not in text:
+        violations.append("Missing statistics sensor nedorachio_rain_observed_48h_rolling")
+    if "nedorachio_rain_observed_48h_v1" not in text:
+        violations.append("Missing template sensor nedorachio_rain_observed_48h")
+    if "sensor.rain_observed_48h" in text:
+        violations.append("Use package-owned sensor.nedorachio_rain_observed_48h, not external sensor.rain_observed_48h")
+    if "sensor.nedorachio_rain_observed_48h" not in text:
+        violations.append("Weather feeder must read sensor.nedorachio_rain_observed_48h")
+    return violations
+
+
 def all_ha_integration_violations() -> list[str]:
     checks = [
         check_ha_no_config_sync,
@@ -197,6 +215,7 @@ def all_ha_integration_violations() -> list[str]:
         check_ha_dashboard_no_config_sync,
         check_ha_dashboard_master_schedule,
         check_ha_gallons_tracking,
+        check_ha_rain_hold_wiring,
     ]
     violations: list[str] = []
     for check in checks:
