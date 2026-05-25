@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 from nedorachio.profile_bridge import load_repo_profile, operational_config_from_profile
 from nedorachio.models import OperationalConfig, ZoneRuntimeState
 from nedorachio.schedule import compute_zone_plans
+from tests.controller.harness import IrrigationHarness
 
 from tests.controller.ha_integration_contract import (
     all_ha_integration_violations,
@@ -48,3 +49,10 @@ def test_weekly_plan_blocked_when_goal_met():
     plans = compute_zone_plans(cfg, zones, now_epoch=now, tz=tz, ha_time_valid=True)
     assert plans[1].weekly_goal_met
     assert plans[1].blocked_reason == "weekly_goal_met"
+
+
+def test_controller_rejects_stale_zero_weekly_from_ha():
+    harness = IrrigationHarness()
+    harness.set_zone_weekly_delivered(1, 350.0)
+    harness.set_zone_weekly_delivered(1, 0.0)
+    assert harness.sim.zones[0].ha_weekly_delivered == 350.0

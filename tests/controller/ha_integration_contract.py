@@ -148,6 +148,8 @@ def check_ha_weekly_gallons_tracking() -> list[str]:
     for z in range(1, 9):
         if f"nedorachio_zone_{z}_week_baseline_gallons:" not in pkg:
             violations.append(f"Missing input_number.nedorachio_zone_{z}_week_baseline_gallons")
+        if f"nedorachio_zone_{z}_gallons_lifetime:" not in pkg:
+            violations.append(f"Missing input_number.nedorachio_zone_{z}_gallons_lifetime")
         if f"zone_{z}_weekly_goal_gallons_sensor" not in fw:
             violations.append(f"Firmware missing zone {z} weekly_goal_gallons sensor")
         if f"input_number.nedorachio_zone_{z}_weekly_goal_gallons:" in pkg:
@@ -161,10 +163,19 @@ def check_ha_weekly_gallons_tracking() -> list[str]:
         if f"on_zone_weekly_delivered({z}," not in fw:
             violations.append(f"Firmware missing on_zone_weekly_delivered handler for zone {z}")
     for z in DASHBOARD_ZONES:
-        if f"sensor.nedorachio_zone_{z}_weekly_remaining" not in dash:
-            violations.append(f"Dashboard must reference sensor.nedorachio_zone_{z}_weekly_remaining")
+        if f"sensor.nedorachio_zone_{z}_weekly_delivered" not in dash:
+            violations.append(f"Dashboard must reference sensor.nedorachio_zone_{z}_weekly_delivered")
+        if f"sensor.nedorachio_zone_{z}_weekly_remaining" in dash:
+            violations.append(f"Dashboard must not show weekly_remaining for zone {z}")
     if "nedorachio_weekly_baseline_reset" not in pkg:
         violations.append("Missing Monday weekly baseline reset automation")
+    if "nedorachio_sync_zone_gallons_lifetime" not in pkg:
+        violations.append("Missing sync automation for HA-persisted zone gallons lifetime")
+    fw_engine = REPO_ROOT / "firmware" / "components" / "nedorachio" / "engine.cpp"
+    if fw_engine.is_file():
+        engine_text = _read(fw_engine)
+        if "accept_ha_weekly_update" not in engine_text:
+            violations.append("Firmware must reject stale HA weekly_delivered decreases")
     return violations
 
 

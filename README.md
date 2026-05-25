@@ -23,9 +23,12 @@ every attempt.
 weekly_delivered = zone_gallons_lifetime − week_baseline_gallons
 ```
 
-Baselines reset every **Monday 00:00** (configured timezone). The ESP reads
-`sensor.nedorachio_zone_N_weekly_delivered` when online and keeps a local NVS
-shadow when HA is unreachable.
+Baselines reset every **Monday 00:00** (configured timezone). Gallons lifetime is
+persisted in HA (`input_number.nedorachio_zone_N_gallons_lifetime`) and synced
+monotonically from the controller, so weekly progress survives a reflash even when
+ESP flash storage is empty. The ESP reads `sensor.nedorachio_zone_N_weekly_delivered`
+when online and keeps a local NVS shadow when HA is unreachable. The controller
+ignores HA reads that would lower weekly progress (including spurious 0 on reconnect).
 
 **Rain credit:** observed rain this week reduces each zone's effective target
 (linear ratio, globally configurable — default **10 mm → 100 gal**). The physical
@@ -132,10 +135,16 @@ Per zone: `enabled`, `weekly_goal_gallons`, pressure/flow limits.
 4. Edit the `notify.notify` target in `nedorachio_alarm_notify`.
 5. **First deploy mid-week:** set each zone's `week_baseline_gallons` and
    `rain_week_baseline_mm` to current lifetime totals (or wait for Monday reset).
+6. **After upgrading from device-only lifetime tracking:** if weekly progress was
+   reset by a reflash, set each `input_number.nedorachio_zone_N_gallons_lifetime`
+   to `week_baseline_gallons + delivered_this_week` (or wait for the sync
+   automation once the controller reports totals again).
 
 | Entity | Role |
 |--------|------|
 | `input_text.nedorachio_zone_N_last_watering` | Last run epoch (ESP reads/writes) |
+| `input_number.nedorachio_zone_N_gallons_lifetime` | HA-persisted total gallons (survives reflash) |
+| `input_number.nedorachio_zone_N_week_baseline_gallons` | Lifetime at start of calendar week |
 | `sensor.nedorachio_zone_N_weekly_delivered` | Gallons this calendar week |
 | `sensor.nedorachio_rain_observed_week` | Rain mm this calendar week |
 | `sensor.nedorachio_rain_credit_gallons_per_zone` | Gallon credit from rain |

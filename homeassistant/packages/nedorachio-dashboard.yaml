@@ -56,26 +56,18 @@ views:
             name: Left goal
           - entity: sensor.nedorachio_zone_1_weekly_delivered
             name: Left delivered
-          - entity: sensor.nedorachio_zone_1_weekly_remaining
-            name: Left remaining
           - entity: sensor.nedorachio_irrigation_controller_zone_2_weekly_goal_gallons
             name: Right goal
           - entity: sensor.nedorachio_zone_2_weekly_delivered
             name: Right delivered
-          - entity: sensor.nedorachio_zone_2_weekly_remaining
-            name: Right remaining
           - entity: sensor.nedorachio_irrigation_controller_zone_3_weekly_goal_gallons
             name: Drip goal
           - entity: sensor.nedorachio_zone_3_weekly_delivered
             name: Drip delivered
-          - entity: sensor.nedorachio_zone_3_weekly_remaining
-            name: Drip remaining
           - entity: sensor.nedorachio_irrigation_controller_zone_4_weekly_goal_gallons
             name: Back goal
           - entity: sensor.nedorachio_zone_4_weekly_delivered
             name: Back delivered
-          - entity: sensor.nedorachio_zone_4_weekly_remaining
-            name: Back remaining
       - type: entities
         title: Last watering (HA)
         entities:

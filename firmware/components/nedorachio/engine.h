@@ -78,7 +78,7 @@ class IrrigationEngine {
   void start_weekly_run(int zone_id, uint32_t now_epoch);
   void step_run(uint32_t now_epoch, uint32_t now_ms);
   void finish_attempt_(int zone_id, uint32_t now_epoch, bool completed);
-  void sync_weekly_delivered_(int zone_id, float gallons_done);
+  void sync_weekly_delivered_(int zone_id, float gallons_done, uint32_t now_epoch);
   bool preflight(uint32_t now_epoch, bool is_schedule);
   void set_phase_(EnginePhase next, const char *reason);
   void record_gallons_delivery_(int zone_id, float gallons);

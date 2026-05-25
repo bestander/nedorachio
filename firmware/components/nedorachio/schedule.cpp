@@ -19,6 +19,25 @@ void local_tm_from_epoch(uint32_t epoch, bool ha_time_valid, struct tm &lt) {
   }
 }
 
+uint32_t next_calendar_week_start_epoch(uint32_t epoch, bool ha_time_valid) {
+  if (epoch == 0)
+    return 0;
+  struct tm lt {};
+  local_tm_from_epoch(epoch, ha_time_valid, lt);
+  struct tm mon = lt;
+  mon.tm_hour = 0;
+  mon.tm_min = 0;
+  mon.tm_sec = 0;
+  const int dow = (lt.tm_wday + 6) % 7;
+  mon.tm_mday -= dow;
+  time_t this_monday = mktime(&mon);
+  if (this_monday == -1)
+    return 0;
+  if (epoch <= (uint32_t) this_monday)
+    return (uint32_t) this_monday;
+  return (uint32_t) (this_monday + 7 * 86400);
+}
+
 }  // namespace
 
 bool in_watering_window(int hour, int minute, const GlobalConfig &g) {
@@ -64,10 +83,14 @@ int maybe_apply_week_reset(ZoneRuntime *zones, int week_id_shadow, int current_w
 }
 
 float weekly_delivered_effective(const ZoneRuntime &zone, bool ha_feed_valid) {
-  const float shadow = std::max(0.0f, zone.weekly_delivered_shadow);
   if (ha_feed_valid)
-    return std::max(shadow, std::max(0.0f, zone.ha_weekly_delivered));
-  return shadow;
+    return std::max(0.0f, zone.ha_weekly_delivered);
+  return std::max(0.0f, zone.weekly_delivered_shadow);
+}
+
+bool accept_ha_weekly_update(float current, float incoming) {
+  const float next = std::max(0.0f, incoming);
+  return next + 1e-3f >= std::max(0.0f, current);
 }
 
 float effective_rain_mm_this_week(const OperationalConfig &cfg, uint32_t now_epoch) {
@@ -144,9 +167,11 @@ void update_scheduled_next_epochs(const OperationalConfig &cfg, ZoneRuntime *zon
     const bool goal_met = goal > 0.0f && delivered >= target;
 
     uint32_t next_eligible = 0;
-    if (!goal_met && zs.last_attempt_epoch > 0 && cooldown_s > 0) {
+    if (goal_met) {
+      next_eligible = next_calendar_week_start_epoch(now_epoch, ha_time_valid);
+    } else if (zs.last_attempt_epoch > 0 && cooldown_s > 0) {
       next_eligible = zs.last_attempt_epoch + cooldown_s;
-    } else if (!goal_met) {
+    } else {
       next_eligible = now_epoch;
     }
     zones[zid - 1].scheduled_next_epoch = next_eligible;

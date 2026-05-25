@@ -3,12 +3,15 @@ from zoneinfo import ZoneInfo
 
 from nedorachio.models import OperationalConfig, ZoneRuntime, ZoneRuntimeState
 from nedorachio.schedule import (
+    accept_ha_weekly_update,
     calendar_week_id,
     compute_zone_plans,
     effective_weekly_goal,
+    next_calendar_week_start_epoch,
     pick_next_zone_round_robin,
     rain_credit_gallons_per_zone,
     update_scheduled_next_epochs,
+    weekly_delivered_effective,
     zone_has_weekly_deficit,
 )
 
@@ -45,10 +48,32 @@ def _epoch(y, m, d, h, mi=0):
     return int(datetime(y, m, d, h, mi, tzinfo=ZoneInfo("America/New_York")).timestamp())
 
 
+def test_weekly_delivered_effective_prefers_ha_when_feed_valid():
+    zs = ZoneRuntimeState(weekly_delivered_shadow=999.0, ha_weekly_delivered=50.0)
+    assert weekly_delivered_effective(zs, ha_feed_valid=True) == 50.0
+    assert weekly_delivered_effective(zs, ha_feed_valid=False) == 999.0
+
+
+def test_accept_ha_weekly_update_rejects_decrease():
+    assert accept_ha_weekly_update(350.0, 0.0) is False
+    assert accept_ha_weekly_update(350.0, 360.0) is True
+    assert accept_ha_weekly_update(0.0, 0.0) is True
+
+
 def test_calendar_week_id_monday_boundary():
     mon = _epoch(2026, 5, 25, 0, 0)
     tz = ZoneInfo("America/New_York")
     assert calendar_week_id(mon, tz=tz) == calendar_week_id(_epoch(2026, 5, 26, 12, 0), tz=tz)
+
+
+def test_next_calendar_week_start_epoch_after_quota_met():
+    tz = ZoneInfo("America/New_York")
+    monday_morning = _epoch(2026, 6, 1, 10, 0)
+    assert next_calendar_week_start_epoch(monday_morning, tz=tz) == _epoch(2026, 6, 8, 0, 0)
+    sunday_night = _epoch(2026, 6, 7, 23, 59)
+    assert next_calendar_week_start_epoch(sunday_night, tz=tz) == _epoch(2026, 6, 8, 0, 0)
+    monday_midnight = _epoch(2026, 6, 1, 0, 0)
+    assert next_calendar_week_start_epoch(monday_midnight, tz=tz) == monday_midnight
 
 
 def test_zone_with_weekly_deficit_has_plan():
@@ -84,6 +109,7 @@ def test_zone_at_weekly_goal_is_blocked():
     )
     assert plans[1].blocked_reason == "weekly_goal_met"
     assert plans[1].weekly_goal_met is True
+    assert plans[1].next_eligible_epoch == _epoch(2026, 6, 8, 0, 0)
 
 
 def test_round_robin_skips_zone_in_cooldown():

@@ -8,9 +8,9 @@
 # Zone last-watering times are input_text helpers (epoch seconds). The ESP reads them
 # on connect and writes them back after watering.
 #
-# Per-zone gallons totals are accumulated on the controller from the flow meter,
-# persisted in flash, and exposed as total_increasing sensors. HA mirrors them as
-# template sensors and computes rolling 7-day totals via statistics sensors.
+# Per-zone gallons totals are accumulated on the controller from the flow meter.
+# HA keeps monotonic lifetime totals in input_number helpers (survives controller reflash).
+# Template sensors expose lifetime and compute weekly progress from lifetime − week baseline.
 #
 # Rain credit: calendar-week rain (Monday reset) reduces each zone's weekly gallon target.
 # Default ratio: 10 mm observed this week → 100 gal credit per zone (globally configurable).
@@ -129,6 +129,63 @@ input_number:
     min: 0
     max: 1000000
     step: 0.01
+    mode: box
+    initial: 0
+
+  nedorachio_zone_1_gallons_lifetime:
+    name: "Nedorachio zone 1 gallons lifetime"
+    min: 0
+    max: 1000000
+    step: 0.1
+    mode: box
+    initial: 0
+  nedorachio_zone_2_gallons_lifetime:
+    name: "Nedorachio zone 2 gallons lifetime"
+    min: 0
+    max: 1000000
+    step: 0.1
+    mode: box
+    initial: 0
+  nedorachio_zone_3_gallons_lifetime:
+    name: "Nedorachio zone 3 gallons lifetime"
+    min: 0
+    max: 1000000
+    step: 0.1
+    mode: box
+    initial: 0
+  nedorachio_zone_4_gallons_lifetime:
+    name: "Nedorachio zone 4 gallons lifetime"
+    min: 0
+    max: 1000000
+    step: 0.1
+    mode: box
+    initial: 0
+  nedorachio_zone_5_gallons_lifetime:
+    name: "Nedorachio zone 5 gallons lifetime"
+    min: 0
+    max: 1000000
+    step: 0.1
+    mode: box
+    initial: 0
+  nedorachio_zone_6_gallons_lifetime:
+    name: "Nedorachio zone 6 gallons lifetime"
+    min: 0
+    max: 1000000
+    step: 0.1
+    mode: box
+    initial: 0
+  nedorachio_zone_7_gallons_lifetime:
+    name: "Nedorachio zone 7 gallons lifetime"
+    min: 0
+    max: 1000000
+    step: 0.1
+    mode: box
+    initial: 0
+  nedorachio_zone_8_gallons_lifetime:
+    name: "Nedorachio zone 8 gallons lifetime"
+    min: 0
+    max: 1000000
+    step: 0.1
     mode: box
     initial: 0
 
@@ -264,73 +321,185 @@ template:
         device_class: timestamp
         state: >-
           {% set e = states('sensor.nedorachio_irrigation_controller_zone_1_scheduled_next_start_epoch') %}
-          {% if e in ['unknown', 'unavailable', 'none', None] or e | float(default=-1) <= 0 %}
-            {{ none }}
-          {% else %}
+          {% if e not in ['unknown', 'unavailable', 'none', None] and e | float(default=-1) > 0 %}
             {{ as_datetime(e | int) }}
+          {% else %}
+            {% set goal = states('sensor.nedorachio_irrigation_controller_zone_1_weekly_goal_gallons') | float(-1) %}
+            {% set delivered = states('sensor.nedorachio_zone_1_weekly_delivered') | float(-1) %}
+            {% set credit = states('sensor.nedorachio_rain_credit_gallons_per_zone') | float(0) %}
+            {% set target = [0, goal - credit] | max %}
+            {% if target > 0 and delivered >= target %}
+              {% set n = now().replace(hour=0, minute=0, second=0, microsecond=0) %}
+              {% set this_mon = n - timedelta(days=n.weekday()) %}
+              {% if now() > this_mon %}
+                {{ this_mon + timedelta(days=7) }}
+              {% else %}
+                {{ this_mon }}
+              {% endif %}
+            {% else %}
+              {{ none }}
+            {% endif %}
           {% endif %}
       - name: "Nedorachio zone 2 next run"
         device_class: timestamp
         state: >-
           {% set e = states('sensor.nedorachio_irrigation_controller_zone_2_scheduled_next_start_epoch') %}
-          {% if e in ['unknown', 'unavailable', 'none', None] or e | float(default=-1) <= 0 %}
-            {{ none }}
-          {% else %}
+          {% if e not in ['unknown', 'unavailable', 'none', None] and e | float(default=-1) > 0 %}
             {{ as_datetime(e | int) }}
+          {% else %}
+            {% set goal = states('sensor.nedorachio_irrigation_controller_zone_2_weekly_goal_gallons') | float(-1) %}
+            {% set delivered = states('sensor.nedorachio_zone_2_weekly_delivered') | float(-1) %}
+            {% set credit = states('sensor.nedorachio_rain_credit_gallons_per_zone') | float(0) %}
+            {% set target = [0, goal - credit] | max %}
+            {% if target > 0 and delivered >= target %}
+              {% set n = now().replace(hour=0, minute=0, second=0, microsecond=0) %}
+              {% set this_mon = n - timedelta(days=n.weekday()) %}
+              {% if now() > this_mon %}
+                {{ this_mon + timedelta(days=7) }}
+              {% else %}
+                {{ this_mon }}
+              {% endif %}
+            {% else %}
+              {{ none }}
+            {% endif %}
           {% endif %}
       - name: "Nedorachio zone 3 next run"
         device_class: timestamp
         state: >-
           {% set e = states('sensor.nedorachio_irrigation_controller_zone_3_scheduled_next_start_epoch') %}
-          {% if e in ['unknown', 'unavailable', 'none', None] or e | float(default=-1) <= 0 %}
-            {{ none }}
-          {% else %}
+          {% if e not in ['unknown', 'unavailable', 'none', None] and e | float(default=-1) > 0 %}
             {{ as_datetime(e | int) }}
+          {% else %}
+            {% set goal = states('sensor.nedorachio_irrigation_controller_zone_3_weekly_goal_gallons') | float(-1) %}
+            {% set delivered = states('sensor.nedorachio_zone_3_weekly_delivered') | float(-1) %}
+            {% set credit = states('sensor.nedorachio_rain_credit_gallons_per_zone') | float(0) %}
+            {% set target = [0, goal - credit] | max %}
+            {% if target > 0 and delivered >= target %}
+              {% set n = now().replace(hour=0, minute=0, second=0, microsecond=0) %}
+              {% set this_mon = n - timedelta(days=n.weekday()) %}
+              {% if now() > this_mon %}
+                {{ this_mon + timedelta(days=7) }}
+              {% else %}
+                {{ this_mon }}
+              {% endif %}
+            {% else %}
+              {{ none }}
+            {% endif %}
           {% endif %}
       - name: "Nedorachio zone 4 next run"
         device_class: timestamp
         state: >-
           {% set e = states('sensor.nedorachio_irrigation_controller_zone_4_scheduled_next_start_epoch') %}
-          {% if e in ['unknown', 'unavailable', 'none', None] or e | float(default=-1) <= 0 %}
-            {{ none }}
-          {% else %}
+          {% if e not in ['unknown', 'unavailable', 'none', None] and e | float(default=-1) > 0 %}
             {{ as_datetime(e | int) }}
+          {% else %}
+            {% set goal = states('sensor.nedorachio_irrigation_controller_zone_4_weekly_goal_gallons') | float(-1) %}
+            {% set delivered = states('sensor.nedorachio_zone_4_weekly_delivered') | float(-1) %}
+            {% set credit = states('sensor.nedorachio_rain_credit_gallons_per_zone') | float(0) %}
+            {% set target = [0, goal - credit] | max %}
+            {% if target > 0 and delivered >= target %}
+              {% set n = now().replace(hour=0, minute=0, second=0, microsecond=0) %}
+              {% set this_mon = n - timedelta(days=n.weekday()) %}
+              {% if now() > this_mon %}
+                {{ this_mon + timedelta(days=7) }}
+              {% else %}
+                {{ this_mon }}
+              {% endif %}
+            {% else %}
+              {{ none }}
+            {% endif %}
           {% endif %}
       - name: "Nedorachio zone 5 next run"
         device_class: timestamp
         state: >-
           {% set e = states('sensor.nedorachio_irrigation_controller_zone_5_scheduled_next_start_epoch') %}
-          {% if e in ['unknown', 'unavailable', 'none', None] or e | float(default=-1) <= 0 %}
-            {{ none }}
-          {% else %}
+          {% if e not in ['unknown', 'unavailable', 'none', None] and e | float(default=-1) > 0 %}
             {{ as_datetime(e | int) }}
+          {% else %}
+            {% set goal = states('sensor.nedorachio_irrigation_controller_zone_5_weekly_goal_gallons') | float(-1) %}
+            {% set delivered = states('sensor.nedorachio_zone_5_weekly_delivered') | float(-1) %}
+            {% set credit = states('sensor.nedorachio_rain_credit_gallons_per_zone') | float(0) %}
+            {% set target = [0, goal - credit] | max %}
+            {% if target > 0 and delivered >= target %}
+              {% set n = now().replace(hour=0, minute=0, second=0, microsecond=0) %}
+              {% set this_mon = n - timedelta(days=n.weekday()) %}
+              {% if now() > this_mon %}
+                {{ this_mon + timedelta(days=7) }}
+              {% else %}
+                {{ this_mon }}
+              {% endif %}
+            {% else %}
+              {{ none }}
+            {% endif %}
           {% endif %}
       - name: "Nedorachio zone 6 next run"
         device_class: timestamp
         state: >-
           {% set e = states('sensor.nedorachio_irrigation_controller_zone_6_scheduled_next_start_epoch') %}
-          {% if e in ['unknown', 'unavailable', 'none', None] or e | float(default=-1) <= 0 %}
-            {{ none }}
-          {% else %}
+          {% if e not in ['unknown', 'unavailable', 'none', None] and e | float(default=-1) > 0 %}
             {{ as_datetime(e | int) }}
+          {% else %}
+            {% set goal = states('sensor.nedorachio_irrigation_controller_zone_6_weekly_goal_gallons') | float(-1) %}
+            {% set delivered = states('sensor.nedorachio_zone_6_weekly_delivered') | float(-1) %}
+            {% set credit = states('sensor.nedorachio_rain_credit_gallons_per_zone') | float(0) %}
+            {% set target = [0, goal - credit] | max %}
+            {% if target > 0 and delivered >= target %}
+              {% set n = now().replace(hour=0, minute=0, second=0, microsecond=0) %}
+              {% set this_mon = n - timedelta(days=n.weekday()) %}
+              {% if now() > this_mon %}
+                {{ this_mon + timedelta(days=7) }}
+              {% else %}
+                {{ this_mon }}
+              {% endif %}
+            {% else %}
+              {{ none }}
+            {% endif %}
           {% endif %}
       - name: "Nedorachio zone 7 next run"
         device_class: timestamp
         state: >-
           {% set e = states('sensor.nedorachio_irrigation_controller_zone_7_scheduled_next_start_epoch') %}
-          {% if e in ['unknown', 'unavailable', 'none', None] or e | float(default=-1) <= 0 %}
-            {{ none }}
-          {% else %}
+          {% if e not in ['unknown', 'unavailable', 'none', None] and e | float(default=-1) > 0 %}
             {{ as_datetime(e | int) }}
+          {% else %}
+            {% set goal = states('sensor.nedorachio_irrigation_controller_zone_7_weekly_goal_gallons') | float(-1) %}
+            {% set delivered = states('sensor.nedorachio_zone_7_weekly_delivered') | float(-1) %}
+            {% set credit = states('sensor.nedorachio_rain_credit_gallons_per_zone') | float(0) %}
+            {% set target = [0, goal - credit] | max %}
+            {% if target > 0 and delivered >= target %}
+              {% set n = now().replace(hour=0, minute=0, second=0, microsecond=0) %}
+              {% set this_mon = n - timedelta(days=n.weekday()) %}
+              {% if now() > this_mon %}
+                {{ this_mon + timedelta(days=7) }}
+              {% else %}
+                {{ this_mon }}
+              {% endif %}
+            {% else %}
+              {{ none }}
+            {% endif %}
           {% endif %}
       - name: "Nedorachio zone 8 next run"
         device_class: timestamp
         state: >-
           {% set e = states('sensor.nedorachio_irrigation_controller_zone_8_scheduled_next_start_epoch') %}
-          {% if e in ['unknown', 'unavailable', 'none', None] or e | float(default=-1) <= 0 %}
-            {{ none }}
-          {% else %}
+          {% if e not in ['unknown', 'unavailable', 'none', None] and e | float(default=-1) > 0 %}
             {{ as_datetime(e | int) }}
+          {% else %}
+            {% set goal = states('sensor.nedorachio_irrigation_controller_zone_8_weekly_goal_gallons') | float(-1) %}
+            {% set delivered = states('sensor.nedorachio_zone_8_weekly_delivered') | float(-1) %}
+            {% set credit = states('sensor.nedorachio_rain_credit_gallons_per_zone') | float(0) %}
+            {% set target = [0, goal - credit] | max %}
+            {% if target > 0 and delivered >= target %}
+              {% set n = now().replace(hour=0, minute=0, second=0, microsecond=0) %}
+              {% set this_mon = n - timedelta(days=n.weekday()) %}
+              {% if now() > this_mon %}
+                {{ this_mon + timedelta(days=7) }}
+              {% else %}
+                {{ this_mon }}
+              {% endif %}
+            {% else %}
+              {{ none }}
+            {% endif %}
           {% endif %}
       - name: "Nedorachio zone 1 next run local"
         state: >-
@@ -400,58 +569,42 @@ template:
         unique_id: nedorachio_zone_1_gallons_lifetime_v1
         unit_of_measurement: gal
         state_class: total_increasing
-        state: "{{ states('sensor.nedorachio_irrigation_controller_zone_1_gallons_total') | float(0) | round(1) }}"
-        availability: >-
-          {{ states('sensor.nedorachio_irrigation_controller_zone_1_gallons_total') not in ['unknown','unavailable','none', None] }}
+        state: "{{ states('input_number.nedorachio_zone_1_gallons_lifetime') | float(0) | round(1) }}" 
       - name: "Nedorachio zone 2 gallons lifetime"
         unique_id: nedorachio_zone_2_gallons_lifetime_v1
         unit_of_measurement: gal
         state_class: total_increasing
-        state: "{{ states('sensor.nedorachio_irrigation_controller_zone_2_gallons_total') | float(0) | round(1) }}"
-        availability: >-
-          {{ states('sensor.nedorachio_irrigation_controller_zone_2_gallons_total') not in ['unknown','unavailable','none', None] }}
+        state: "{{ states('input_number.nedorachio_zone_2_gallons_lifetime') | float(0) | round(1) }}" 
       - name: "Nedorachio zone 3 gallons lifetime"
         unique_id: nedorachio_zone_3_gallons_lifetime_v1
         unit_of_measurement: gal
         state_class: total_increasing
-        state: "{{ states('sensor.nedorachio_irrigation_controller_zone_3_gallons_total') | float(0) | round(1) }}"
-        availability: >-
-          {{ states('sensor.nedorachio_irrigation_controller_zone_3_gallons_total') not in ['unknown','unavailable','none', None] }}
+        state: "{{ states('input_number.nedorachio_zone_3_gallons_lifetime') | float(0) | round(1) }}" 
       - name: "Nedorachio zone 4 gallons lifetime"
         unique_id: nedorachio_zone_4_gallons_lifetime_v1
         unit_of_measurement: gal
         state_class: total_increasing
-        state: "{{ states('sensor.nedorachio_irrigation_controller_zone_4_gallons_total') | float(0) | round(1) }}"
-        availability: >-
-          {{ states('sensor.nedorachio_irrigation_controller_zone_4_gallons_total') not in ['unknown','unavailable','none', None] }}
+        state: "{{ states('input_number.nedorachio_zone_4_gallons_lifetime') | float(0) | round(1) }}" 
       - name: "Nedorachio zone 5 gallons lifetime"
         unique_id: nedorachio_zone_5_gallons_lifetime_v1
         unit_of_measurement: gal
         state_class: total_increasing
-        state: "{{ states('sensor.nedorachio_irrigation_controller_zone_5_gallons_total') | float(0) | round(1) }}"
-        availability: >-
-          {{ states('sensor.nedorachio_irrigation_controller_zone_5_gallons_total') not in ['unknown','unavailable','none', None] }}
+        state: "{{ states('input_number.nedorachio_zone_5_gallons_lifetime') | float(0) | round(1) }}" 
       - name: "Nedorachio zone 6 gallons lifetime"
         unique_id: nedorachio_zone_6_gallons_lifetime_v1
         unit_of_measurement: gal
         state_class: total_increasing
-        state: "{{ states('sensor.nedorachio_irrigation_controller_zone_6_gallons_total') | float(0) | round(1) }}"
-        availability: >-
-          {{ states('sensor.nedorachio_irrigation_controller_zone_6_gallons_total') not in ['unknown','unavailable','none', None] }}
+        state: "{{ states('input_number.nedorachio_zone_6_gallons_lifetime') | float(0) | round(1) }}" 
       - name: "Nedorachio zone 7 gallons lifetime"
         unique_id: nedorachio_zone_7_gallons_lifetime_v1
         unit_of_measurement: gal
         state_class: total_increasing
-        state: "{{ states('sensor.nedorachio_irrigation_controller_zone_7_gallons_total') | float(0) | round(1) }}"
-        availability: >-
-          {{ states('sensor.nedorachio_irrigation_controller_zone_7_gallons_total') not in ['unknown','unavailable','none', None] }}
+        state: "{{ states('input_number.nedorachio_zone_7_gallons_lifetime') | float(0) | round(1) }}" 
       - name: "Nedorachio zone 8 gallons lifetime"
         unique_id: nedorachio_zone_8_gallons_lifetime_v1
         unit_of_measurement: gal
         state_class: total_increasing
-        state: "{{ states('sensor.nedorachio_irrigation_controller_zone_8_gallons_total') | float(0) | round(1) }}"
-        availability: >-
-          {{ states('sensor.nedorachio_irrigation_controller_zone_8_gallons_total') not in ['unknown','unavailable','none', None] }}
+        state: "{{ states('input_number.nedorachio_zone_8_gallons_lifetime') | float(0) | round(1) }}" 
       - name: "Nedorachio zone 1 gallons last 7 days"
         unique_id: nedorachio_zone_1_gallons_7d_v1
         unit_of_measurement: gal
@@ -544,10 +697,10 @@ template:
         unique_id: nedorachio_zone_1_weekly_delivered_v1
         unit_of_measurement: gal
         availability: >-
-          {{ states('sensor.nedorachio_irrigation_controller_zone_1_gallons_total') not in ['unknown','unavailable','none', None]
+          {{ states('input_number.nedorachio_zone_1_gallons_lifetime') not in ['unknown','unavailable','none', None]
              and states('input_number.nedorachio_zone_1_week_baseline_gallons') not in ['unknown','unavailable','none', None] }}
         state: >-
-          {{ [0, states('sensor.nedorachio_irrigation_controller_zone_1_gallons_total') | float(0)
+          {{ [0, states('input_number.nedorachio_zone_1_gallons_lifetime') | float(0)
             - states('input_number.nedorachio_zone_1_week_baseline_gallons') | float(0)] | max | round(1) }}
       - name: "Nedorachio zone 1 weekly remaining"
         unique_id: nedorachio_zone_1_weekly_remaining_v1
@@ -564,10 +717,10 @@ template:
         unique_id: nedorachio_zone_2_weekly_delivered_v1
         unit_of_measurement: gal
         availability: >-
-          {{ states('sensor.nedorachio_irrigation_controller_zone_2_gallons_total') not in ['unknown','unavailable','none', None]
+          {{ states('input_number.nedorachio_zone_2_gallons_lifetime') not in ['unknown','unavailable','none', None]
              and states('input_number.nedorachio_zone_2_week_baseline_gallons') not in ['unknown','unavailable','none', None] }}
         state: >-
-          {{ [0, states('sensor.nedorachio_irrigation_controller_zone_2_gallons_total') | float(0)
+          {{ [0, states('input_number.nedorachio_zone_2_gallons_lifetime') | float(0)
             - states('input_number.nedorachio_zone_2_week_baseline_gallons') | float(0)] | max | round(1) }}
       - name: "Nedorachio zone 2 weekly remaining"
         unique_id: nedorachio_zone_2_weekly_remaining_v1
@@ -584,10 +737,10 @@ template:
         unique_id: nedorachio_zone_3_weekly_delivered_v1
         unit_of_measurement: gal
         availability: >-
-          {{ states('sensor.nedorachio_irrigation_controller_zone_3_gallons_total') not in ['unknown','unavailable','none', None]
+          {{ states('input_number.nedorachio_zone_3_gallons_lifetime') not in ['unknown','unavailable','none', None]
              and states('input_number.nedorachio_zone_3_week_baseline_gallons') not in ['unknown','unavailable','none', None] }}
         state: >-
-          {{ [0, states('sensor.nedorachio_irrigation_controller_zone_3_gallons_total') | float(0)
+          {{ [0, states('input_number.nedorachio_zone_3_gallons_lifetime') | float(0)
             - states('input_number.nedorachio_zone_3_week_baseline_gallons') | float(0)] | max | round(1) }}
       - name: "Nedorachio zone 3 weekly remaining"
         unique_id: nedorachio_zone_3_weekly_remaining_v1
@@ -604,10 +757,10 @@ template:
         unique_id: nedorachio_zone_4_weekly_delivered_v1
         unit_of_measurement: gal
         availability: >-
-          {{ states('sensor.nedorachio_irrigation_controller_zone_4_gallons_total') not in ['unknown','unavailable','none', None]
+          {{ states('input_number.nedorachio_zone_4_gallons_lifetime') not in ['unknown','unavailable','none', None]
              and states('input_number.nedorachio_zone_4_week_baseline_gallons') not in ['unknown','unavailable','none', None] }}
         state: >-
-          {{ [0, states('sensor.nedorachio_irrigation_controller_zone_4_gallons_total') | float(0)
+          {{ [0, states('input_number.nedorachio_zone_4_gallons_lifetime') | float(0)
             - states('input_number.nedorachio_zone_4_week_baseline_gallons') | float(0)] | max | round(1) }}
       - name: "Nedorachio zone 4 weekly remaining"
         unique_id: nedorachio_zone_4_weekly_remaining_v1
@@ -624,10 +777,10 @@ template:
         unique_id: nedorachio_zone_5_weekly_delivered_v1
         unit_of_measurement: gal
         availability: >-
-          {{ states('sensor.nedorachio_irrigation_controller_zone_5_gallons_total') not in ['unknown','unavailable','none', None]
+          {{ states('input_number.nedorachio_zone_5_gallons_lifetime') not in ['unknown','unavailable','none', None]
              and states('input_number.nedorachio_zone_5_week_baseline_gallons') not in ['unknown','unavailable','none', None] }}
         state: >-
-          {{ [0, states('sensor.nedorachio_irrigation_controller_zone_5_gallons_total') | float(0)
+          {{ [0, states('input_number.nedorachio_zone_5_gallons_lifetime') | float(0)
             - states('input_number.nedorachio_zone_5_week_baseline_gallons') | float(0)] | max | round(1) }}
       - name: "Nedorachio zone 5 weekly remaining"
         unique_id: nedorachio_zone_5_weekly_remaining_v1
@@ -644,10 +797,10 @@ template:
         unique_id: nedorachio_zone_6_weekly_delivered_v1
         unit_of_measurement: gal
         availability: >-
-          {{ states('sensor.nedorachio_irrigation_controller_zone_6_gallons_total') not in ['unknown','unavailable','none', None]
+          {{ states('input_number.nedorachio_zone_6_gallons_lifetime') not in ['unknown','unavailable','none', None]
              and states('input_number.nedorachio_zone_6_week_baseline_gallons') not in ['unknown','unavailable','none', None] }}
         state: >-
-          {{ [0, states('sensor.nedorachio_irrigation_controller_zone_6_gallons_total') | float(0)
+          {{ [0, states('input_number.nedorachio_zone_6_gallons_lifetime') | float(0)
             - states('input_number.nedorachio_zone_6_week_baseline_gallons') | float(0)] | max | round(1) }}
       - name: "Nedorachio zone 6 weekly remaining"
         unique_id: nedorachio_zone_6_weekly_remaining_v1
@@ -664,10 +817,10 @@ template:
         unique_id: nedorachio_zone_7_weekly_delivered_v1
         unit_of_measurement: gal
         availability: >-
-          {{ states('sensor.nedorachio_irrigation_controller_zone_7_gallons_total') not in ['unknown','unavailable','none', None]
+          {{ states('input_number.nedorachio_zone_7_gallons_lifetime') not in ['unknown','unavailable','none', None]
              and states('input_number.nedorachio_zone_7_week_baseline_gallons') not in ['unknown','unavailable','none', None] }}
         state: >-
-          {{ [0, states('sensor.nedorachio_irrigation_controller_zone_7_gallons_total') | float(0)
+          {{ [0, states('input_number.nedorachio_zone_7_gallons_lifetime') | float(0)
             - states('input_number.nedorachio_zone_7_week_baseline_gallons') | float(0)] | max | round(1) }}
       - name: "Nedorachio zone 7 weekly remaining"
         unique_id: nedorachio_zone_7_weekly_remaining_v1
@@ -684,10 +837,10 @@ template:
         unique_id: nedorachio_zone_8_weekly_delivered_v1
         unit_of_measurement: gal
         availability: >-
-          {{ states('sensor.nedorachio_irrigation_controller_zone_8_gallons_total') not in ['unknown','unavailable','none', None]
+          {{ states('input_number.nedorachio_zone_8_gallons_lifetime') not in ['unknown','unavailable','none', None]
              and states('input_number.nedorachio_zone_8_week_baseline_gallons') not in ['unknown','unavailable','none', None] }}
         state: >-
-          {{ [0, states('sensor.nedorachio_irrigation_controller_zone_8_gallons_total') | float(0)
+          {{ [0, states('input_number.nedorachio_zone_8_gallons_lifetime') | float(0)
             - states('input_number.nedorachio_zone_8_week_baseline_gallons') | float(0)] | max | round(1) }}
       - name: "Nedorachio zone 8 weekly remaining"
         unique_id: nedorachio_zone_8_weekly_remaining_v1
@@ -784,6 +937,66 @@ sensor:
     unit_of_measurement: gal
 
 automation:
+  - id: nedorachio_sync_zone_gallons_lifetime
+    alias: "Nedorachio: sync HA-persisted zone gallons lifetime"
+    mode: queued
+    max: 10
+    trigger:
+      - platform: homeassistant
+        event: start
+      - platform: state
+        entity_id:
+          - sensor.nedorachio_irrigation_controller_zone_1_gallons_total
+          - sensor.nedorachio_irrigation_controller_zone_2_gallons_total
+          - sensor.nedorachio_irrigation_controller_zone_3_gallons_total
+          - sensor.nedorachio_irrigation_controller_zone_4_gallons_total
+          - sensor.nedorachio_irrigation_controller_zone_5_gallons_total
+          - sensor.nedorachio_irrigation_controller_zone_6_gallons_total
+          - sensor.nedorachio_irrigation_controller_zone_7_gallons_total
+          - sensor.nedorachio_irrigation_controller_zone_8_gallons_total
+    action:
+      - repeat:
+          for_each:
+            - "1"
+            - "2"
+            - "3"
+            - "4"
+            - "5"
+            - "6"
+            - "7"
+            - "8"
+          sequence:
+            - variables:
+                device_id: "sensor.nedorachio_irrigation_controller_zone_{{ repeat.item }}_gallons_total"
+                stored_id: "input_number.nedorachio_zone_{{ repeat.item }}_gallons_lifetime"
+                baseline_id: "input_number.nedorachio_zone_{{ repeat.item }}_week_baseline_gallons"
+                device: >-
+                  {% if states(device_id) not in ['unknown','unavailable','none', None] %}
+                    {{ states(device_id) | float(0) }}
+                  {% else %}
+                    -1
+                  {% endif %}
+                stored: "{{ states(stored_id) | float(0) }}"
+                baseline: "{{ states(baseline_id) | float(0) }}"
+                new_lifetime: >-
+                  {% set s = stored | float(0) %}
+                  {% set b = baseline | float(0) %}
+                  {% set d = device | float(-1) %}
+                  {% if d >= 0 %}
+                    {{ [s, d] | max }}
+                  {% elif s == 0 and b > 0 %}
+                    {{ b }}
+                  {% else %}
+                    {{ s }}
+                  {% endif %}
+            - condition: template
+              value_template: "{{ new_lifetime | float(0) > stored | float(0) }}"
+            - action: input_number.set_value
+              target:
+                entity_id: "{{ stored_id }}"
+              data:
+                value: "{{ new_lifetime | float(0) | round(1) }}"
+
   - id: nedorachio_weekly_baseline_reset
     alias: "Nedorachio: reset weekly gallon baselines (Monday)"
     trigger:

@@ -88,6 +88,10 @@ void IrrigationEngine::on_zone_weekly_delivered(int zone_id, float gallons, uint
     return;
   auto &zs = this->zones_[zone_id - 1];
   const float ha_val = std::max(0.0f, gallons);
+  if (!accept_ha_weekly_update(zs.ha_weekly_delivered, ha_val)) {
+    ESP_LOGW(TAG, "ignore stale HA weekly z=%d incoming=%.2f current=%.2f", zone_id, ha_val, zs.ha_weekly_delivered);
+    return;
+  }
   zs.ha_weekly_delivered = ha_val;
   zs.weekly_delivered_shadow = std::max(zs.weekly_delivered_shadow, ha_val);
   this->ha_weekly_last_update_epoch_ = now_epoch;
@@ -181,8 +185,10 @@ float IrrigationEngine::integrate_run_gallons_() const {
   return (ppg > 0.0f) ? run_pulses / ppg : 0.0f;
 }
 
-void IrrigationEngine::sync_weekly_delivered_(int zone_id, float gallons_done) {
+void IrrigationEngine::sync_weekly_delivered_(int zone_id, float gallons_done, uint32_t now_epoch) {
   if (zone_id < 1 || zone_id > kNumZones)
+    return;
+  if (this->ha_weekly_feed_valid_(now_epoch))
     return;
   this->zones_[zone_id - 1].weekly_delivered_shadow = std::max(this->zones_[zone_id - 1].weekly_delivered_shadow, gallons_done);
 }
@@ -382,7 +388,7 @@ void IrrigationEngine::step_run(uint32_t now_epoch, uint32_t now_ms) {
   const int zid = this->run_zone_id_;
   const float session_gal = this->integrate_run_gallons_();
   this->run_gallons_done_ = this->run_start_delivered_ + session_gal;
-  this->sync_weekly_delivered_(zid, this->run_gallons_done_);
+  this->sync_weekly_delivered_(zid, this->run_gallons_done_, now_epoch);
 
   if (this->run_cancel_requested_) {
     ESP_LOGW(TAG, "run cancelled z=%d cause=%s manual=%d delivered=%.2f", zid, this->run_cancel_cause_,
@@ -491,7 +497,7 @@ bool IrrigationEngine::request_zone_off(int zone_id, uint32_t now_epoch) {
     if (this->phase_ == EnginePhase::RUNNING) {
       const float session_gal = std::max(0.0f, this->integrate_run_gallons_());
       this->run_gallons_done_ = this->run_start_delivered_ + session_gal;
-      this->sync_weekly_delivered_(zone_id, this->run_gallons_done_);
+      this->sync_weekly_delivered_(zone_id, this->run_gallons_done_, now_epoch);
       this->record_gallons_delivery_(zone_id, session_gal);
       this->finish_attempt_(zone_id, now_epoch, false);
     }

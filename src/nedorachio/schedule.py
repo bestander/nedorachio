@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from nedorachio.models import OperationalConfig, ZonePlan, ZoneRuntime, ZoneRuntimeState
@@ -21,6 +21,18 @@ def calendar_week_id(epoch: int, *, tz: ZoneInfo) -> int:
     dt = datetime.fromtimestamp(epoch, tz=tz)
     iso = dt.isocalendar()
     return iso.year * 100 + iso.week
+
+
+def next_calendar_week_start_epoch(epoch: int, *, tz: ZoneInfo) -> int:
+    """Next Monday 00:00 local time when the weekly gallon quota resets."""
+    if epoch <= 0:
+        return 0
+    dt = datetime.fromtimestamp(epoch, tz=tz)
+    midnight = dt.replace(hour=0, minute=0, second=0, microsecond=0)
+    this_monday = midnight - timedelta(days=dt.weekday())
+    if epoch <= int(this_monday.timestamp()):
+        return int(this_monday.timestamp())
+    return int((this_monday + timedelta(days=7)).timestamp())
 
 
 def maybe_apply_week_reset(
@@ -46,10 +58,15 @@ def weekly_delivered_effective(
     *,
     ha_feed_valid: bool,
 ) -> float:
-    shadow = max(0.0, zone.weekly_delivered_shadow)
     if ha_feed_valid:
-        return max(shadow, max(0.0, zone.ha_weekly_delivered))
-    return shadow
+        return max(0.0, zone.ha_weekly_delivered)
+    return max(0.0, zone.weekly_delivered_shadow)
+
+
+def accept_ha_weekly_update(current: float, incoming: float) -> bool:
+    """Ignore stale HA reads (especially 0 on reconnect) that would lower progress."""
+    incoming = max(0.0, incoming)
+    return incoming + 1e-3 >= max(0.0, current)
 
 
 def effective_rain_mm_this_week(
@@ -241,9 +258,11 @@ def compute_zone_plans(
             blocked_reason = "attempt_cooldown"
 
         next_eligible: int | None = None
-        if not goal_met and zs.last_attempt_epoch > 0 and cooldown_s > 0:
+        if goal_met:
+            next_eligible = next_calendar_week_start_epoch(now_epoch, tz=tz)
+        elif zs.last_attempt_epoch > 0 and cooldown_s > 0:
             next_eligible = zs.last_attempt_epoch + cooldown_s
-        elif not goal_met and blocked_reason is None:
+        elif blocked_reason is None:
             next_eligible = now_epoch
 
         plans[zid] = ZonePlan(

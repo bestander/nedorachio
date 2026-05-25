@@ -18,6 +18,7 @@ from nedorachio.models import (
     ZoneRuntimeState,
 )
 from nedorachio.schedule import (
+    accept_ha_weekly_update,
     calendar_week_id,
     effective_rain_mm_this_week,
     effective_weekly_goal,
@@ -144,6 +145,8 @@ class ControllerSimulator:
             return
         zs = self.zones[zone_id - 1]
         ha_val = max(0.0, gallons)
+        if not accept_ha_weekly_update(zs.ha_weekly_delivered, ha_val):
+            return
         zs.ha_weekly_delivered = ha_val
         zs.weekly_delivered_shadow = max(zs.weekly_delivered_shadow, ha_val)
         self.ha_weekly_last_update_epoch = self.clock.epoch
@@ -313,6 +316,8 @@ class ControllerSimulator:
         return run_pulses / ppg if ppg > 0 else 0.0
 
     def _sync_weekly_delivered(self, zone_id: int, gallons_done: float) -> None:
+        if self.ha_weekly_feed_valid():
+            return
         zs = self.zones[zone_id - 1]
         zs.weekly_delivered_shadow = max(zs.weekly_delivered_shadow, gallons_done)
 
@@ -365,6 +370,8 @@ class ControllerSimulator:
         self.stamp_cadence_on_zone_off = completed
         self._drive_zone(zone_id, False)
         self._finish_attempt(zone_id, completed=completed)
+        if self.ha_weekly_feed_valid():
+            self.on_zone_weekly_delivered(zone_id, self.run.gallons_done)
 
         if self.run.cancel_requested:
             self._emit(EventType.RUN_CANCEL, self.run.cancel_cause, zone_id)
