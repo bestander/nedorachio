@@ -74,3 +74,10 @@ def test_master_schedule_on_plans_from_firmware_profile():
     next_local = datetime.fromtimestamp(zones[0].scheduled_next_epoch, tz)
     assert next_local.day == 25
     assert next_local.month == 5
+
+
+def test_gallons_tracking_contract():
+    from tests.controller.ha_integration_contract import check_ha_gallons_tracking
+
+    violations = check_ha_gallons_tracking()
+    assert not violations, "Gallons tracking violations:\n- " + "\n- ".join(violations)

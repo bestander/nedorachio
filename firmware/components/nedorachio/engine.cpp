@@ -44,6 +44,16 @@ void IrrigationEngine::set_phase_(EnginePhase next, const char *reason) {
   this->phase_ = next;
 }
 
+void IrrigationEngine::record_gallons_delivery_(int zone_id, float gallons) {
+  if (zone_id < 1 || zone_id > kNumZones || gallons <= 0.0f)
+    return;
+  this->zones_[zone_id - 1].gallons_total += gallons;
+  this->last_completed_zone_ = zone_id;
+  this->last_run_gallons_ = gallons;
+  this->gallons_completion_sequence_++;
+  ESP_LOGI(TAG, "gallons event z=%d delivered=%.2f seq=%u", zone_id, gallons, this->gallons_completion_sequence_);
+}
+
 void IrrigationEngine::apply_runtime(const RuntimeState &state) {
   ESP_LOGI(TAG, "apply_runtime updated_epoch=%u rain_wet=%u rain_forecast=%u last_attempt=%u",
            state.updated_epoch, state.rain_sensor_last_wet_epoch, state.rain_forecast_last_high_epoch,
@@ -75,6 +85,18 @@ uint32_t IrrigationEngine::zone_last_finished_epoch(int zone_id) const {
   if (zone_id < 1 || zone_id > kNumZones)
     return 0;
   return this->zones_[zone_id - 1].last_finished_epoch;
+}
+
+float IrrigationEngine::zone_gallons_total(int zone_id) const {
+  if (zone_id < 1 || zone_id > kNumZones)
+    return 0.0f;
+  return this->zones_[zone_id - 1].gallons_total;
+}
+
+void IrrigationEngine::set_zone_gallons_total(int zone_id, float gallons) {
+  if (zone_id < 1 || zone_id > kNumZones)
+    return;
+  this->zones_[zone_id - 1].gallons_total = std::max(0.0f, gallons);
 }
 
 void IrrigationEngine::set_zone_last_finished(int zone_id, uint32_t epoch, uint32_t now_epoch, bool ha_time_valid) {
@@ -253,6 +275,7 @@ void IrrigationEngine::start_schedule_fire(int zone_id, uint32_t now_epoch) {
   this->run_started_total_ = this->read_flow_total();
   this->run_cancel_requested_ = false;
   this->run_cancel_cause_[0] = '\0';
+  strncpy(this->last_run_outcome_, "running", sizeof(this->last_run_outcome_));
 
   const float p = this->read_pressure(false);
   ESP_LOGI(TAG, "start_run z=%d manual=%d goal=%.1fg cycle=%.1fg soak=%.0fm pressure=%.1f total_pulses=%.0f",
@@ -305,9 +328,15 @@ void IrrigationEngine::step_run(uint32_t now_epoch, uint32_t now_ms) {
   if (this->phase_ != EnginePhase::RUNNING_GALLONS)
     return;
 
+  const float ppg = this->config_.global.pulses_per_gallon;
+  const float total = this->read_flow_total();
+  const float run_gal = (ppg > 0.0f) ? (total - this->run_started_total_) / ppg : 0.0f;
+  const float chunk_gal = (ppg > 0.0f) ? (total - this->chunk_start_total_) / ppg : 0.0f;
+
   if (this->run_cancel_requested_) {
     ESP_LOGW(TAG, "run cancelled z=%d cause=%s manual=%d", this->run_zone_id_, this->run_cancel_cause_,
              this->is_manual_run_);
+    this->record_gallons_delivery_(this->run_zone_id_, std::max(0.0f, run_gal));
     this->drive_zone(this->run_zone_id_, false, false);
     snprintf(this->last_run_outcome_, sizeof(this->last_run_outcome_), "cancelled_%s", this->run_cancel_cause_);
     this->last_non_completed_attempt_epoch_ = now_epoch;
@@ -316,16 +345,13 @@ void IrrigationEngine::step_run(uint32_t now_epoch, uint32_t now_ms) {
     return;
   }
 
-  const float ppg = this->config_.global.pulses_per_gallon;
-  const float total = this->read_flow_total();
-  const float run_gal = (ppg > 0.0f) ? (total - this->run_started_total_) / ppg : 0.0f;
-  const float chunk_gal = (ppg > 0.0f) ? (total - this->chunk_start_total_) / ppg : 0.0f;
   this->run_gallons_done_ = this->run_base_gallons_ + std::max(0.0f, run_gal);
   this->zones_[this->run_zone_id_ - 1].cycle_delivered_gallons = this->run_gallons_done_;
 
   if (this->run_gallons_done_ >= this->run_goal_gallons_) {
     ESP_LOGI(TAG, "run completed z=%d delivered=%.2f/%.2fg", this->run_zone_id_, this->run_gallons_done_,
              this->run_goal_gallons_);
+    this->record_gallons_delivery_(this->run_zone_id_, std::max(0.0f, run_gal));
     this->drive_zone(this->run_zone_id_, false, true);
     this->zones_[this->run_zone_id_ - 1].last_finished_epoch = now_epoch;
     this->zones_[this->run_zone_id_ - 1].cycle_delivered_gallons = 0.0f;
@@ -433,6 +459,14 @@ bool IrrigationEngine::request_zone_off(int zone_id, uint32_t now_epoch) {
   }
 
   if (this->currently_on_zone_ == zone_id) {
+    if (this->phase_ == EnginePhase::RUNNING_GALLONS || this->phase_ == EnginePhase::SOAKING) {
+      const float ppg = this->config_.global.pulses_per_gallon;
+      const float total = this->read_flow_total();
+      const float run_gal = (ppg > 0.0f) ? (total - this->run_started_total_) / ppg : 0.0f;
+      const float session_gal = std::max(0.0f, run_gal);
+      this->run_gallons_done_ = this->run_base_gallons_ + session_gal;
+      this->record_gallons_delivery_(zone_id, session_gal);
+    }
     this->drive_zone(zone_id, false, false);
     if (this->phase_ != EnginePhase::IDLE) {
       strncpy(this->last_run_outcome_, "cancelled_manual", sizeof(this->last_run_outcome_));

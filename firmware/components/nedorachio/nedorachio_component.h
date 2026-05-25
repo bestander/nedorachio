@@ -5,6 +5,7 @@
 
 #include "esphome/components/time/real_time_clock.h"
 #include "esphome/core/component.h"
+#include "esphome/core/preferences.h"
 
 namespace esphome {
 namespace nedorachio {
@@ -12,6 +13,11 @@ namespace nedorachio {
 struct HaPublishRequest {
   int zone{0};
   uint32_t epoch{0};
+};
+
+struct ZoneGallonsPersistV1 {
+  uint32_t magic{0x4E5A4731u};
+  float gallons[kNumZones]{};
 };
 
 class NedorachioComponent : public esphome::Component {
@@ -32,6 +38,10 @@ class NedorachioComponent : public esphome::Component {
   bool get_zone_actual_state(int zone_id) const;
 
   float get_zone_scheduled_next(int zone_id) const;
+  float get_zone_gallons_total(int zone_id) const;
+  int get_last_completed_zone() const;
+  float get_last_run_gallons() const;
+  uint32_t get_gallons_completion_sequence() const;
   int get_currently_running_zone() const;
   const char *get_current_phase() const;
   const char *get_last_run_outcome() const;
@@ -63,6 +73,11 @@ class NedorachioComponent : public esphome::Component {
   uint32_t last_tick_ms_{0};
   uint32_t published_last_finished_[kNumZones]{};
   HaPublishRequest pending_ha_publish_{};
+  ESPPreferenceObject zone_gallons_pref_{};
+  ZoneGallonsPersistV1 persisted_{};
+
+  void load_persisted_gallons_();
+  void sync_persisted_gallons_();
 };
 
 }  // namespace nedorachio

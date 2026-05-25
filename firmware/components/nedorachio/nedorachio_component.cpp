@@ -1,5 +1,6 @@
 #include "nedorachio_component.h"
 
+#include "esphome/core/helpers.h"
 #include "esphome/core/log.h"
 
 #include <Arduino.h>
@@ -11,8 +12,46 @@ static const char *const TAG = "nedorachio";
 
 void NedorachioComponent::setup() {
   this->last_tick_ms_ = millis();
+  this->zone_gallons_pref_ = global_preferences->make_preference<ZoneGallonsPersistV1>(fnv1_hash("nedorachio_zone_gallons_v1"), true);
+  this->load_persisted_gallons_();
   this->apply_config_profile_();
   ESP_LOGI(TAG, "Nedorachio component ready");
+}
+
+void NedorachioComponent::load_persisted_gallons_() {
+  if (this->engine_ == nullptr)
+    return;
+  ZoneGallonsPersistV1 stored{};
+  if (this->zone_gallons_pref_.load(&stored) && stored.magic == 0x4E5A4731u) {
+    this->persisted_ = stored;
+    for (int i = 0; i < kNumZones; i++) {
+      this->engine_->set_zone_gallons_total(i + 1, stored.gallons[i]);
+      ESP_LOGI(TAG, "restored zone %d gallons_total=%.2f", i + 1, stored.gallons[i]);
+    }
+    return;
+  }
+  this->persisted_ = {};
+}
+
+void NedorachioComponent::sync_persisted_gallons_() {
+  if (this->engine_ == nullptr)
+    return;
+  bool changed = false;
+  for (int i = 0; i < kNumZones; i++) {
+    const float current = this->engine_->zone_gallons_total(i + 1);
+    if (current == this->persisted_.gallons[i])
+      continue;
+    this->persisted_.gallons[i] = current;
+    changed = true;
+  }
+  if (!changed)
+    return;
+  this->persisted_.magic = 0x4E5A4731u;
+  if (this->zone_gallons_pref_.save(&this->persisted_)) {
+    ESP_LOGI(TAG, "persisted zone gallons totals");
+  } else {
+    ESP_LOGW(TAG, "failed to persist zone gallons totals (NVS full?)");
+  }
 }
 
 uint32_t NedorachioComponent::now_epoch_() const {
@@ -54,6 +93,9 @@ void NedorachioComponent::apply_config_profile_() {
 void NedorachioComponent::on_zone_last_watering(int zone_id, uint32_t epoch) {
   if (this->engine_ == nullptr || zone_id < 1 || zone_id > kNumZones)
     return;
+  // ESPHome homeassistant sensor passes unavailable as NaN -> (uint32_t)-1.
+  if (epoch == UINT32_MAX)
+    return;
   const uint32_t now = this->now_epoch_();
   const bool ha_ok = this->ha_time_valid_();
   this->engine_->set_zone_last_finished(zone_id, epoch, now, ha_ok);
@@ -92,6 +134,7 @@ void NedorachioComponent::loop() {
 
   if (this->engine_ != nullptr) {
     this->engine_->tick(this->now_epoch_(), now_ms, this->ha_time_valid_());
+    this->sync_persisted_gallons_();
     this->sync_ha_publish_from_engine_();
   }
 }
@@ -100,6 +143,30 @@ float NedorachioComponent::get_zone_scheduled_next(int zone_id) const {
   if (this->engine_ == nullptr || zone_id < 1 || zone_id > kNumZones)
     return 0;
   return static_cast<float>(this->engine_->zone_scheduled_next(zone_id));
+}
+
+float NedorachioComponent::get_zone_gallons_total(int zone_id) const {
+  if (this->engine_ == nullptr)
+    return 0.0f;
+  return this->engine_->zone_gallons_total(zone_id);
+}
+
+int NedorachioComponent::get_last_completed_zone() const {
+  if (this->engine_ == nullptr)
+    return 0;
+  return this->engine_->last_completed_zone();
+}
+
+float NedorachioComponent::get_last_run_gallons() const {
+  if (this->engine_ == nullptr)
+    return 0.0f;
+  return this->engine_->last_run_gallons();
+}
+
+uint32_t NedorachioComponent::get_gallons_completion_sequence() const {
+  if (this->engine_ == nullptr)
+    return 0;
+  return this->engine_->gallons_completion_sequence();
 }
 
 int NedorachioComponent::get_currently_running_zone() const {

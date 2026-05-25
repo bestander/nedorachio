@@ -8,6 +8,10 @@
 # Zone last-watering times are input_text helpers (epoch seconds). The ESP reads them
 # on connect and writes them back after watering.
 #
+# Per-zone gallons totals are accumulated on the controller from the flow meter,
+# persisted in flash, and exposed as total_increasing sensors. HA mirrors them as
+# template sensors and computes rolling 7-day totals via statistics sensors.
+#
 # Requires: homeassistant: packages: !include_dir_named packages
 
 input_text:
@@ -262,6 +266,216 @@ template:
             {% set ts = as_timestamp(states('sensor.nedorachio_zone_8_next_run'), default=0) | int(0) %}
             {% if ts <= 0 %}unknown{% else %}{{ ts | timestamp_custom('%Y-%m-%d %H:%M', true) }}{% endif %}
           {% endif %}
+      - name: "Nedorachio zone 1 gallons lifetime"
+        unique_id: nedorachio_zone_1_gallons_lifetime_v1
+        unit_of_measurement: gal
+        state_class: total_increasing
+        state: "{{ states('sensor.nedorachio_irrigation_controller_zone_1_gallons_total') | float(0) | round(1) }}"
+      - name: "Nedorachio zone 2 gallons lifetime"
+        unique_id: nedorachio_zone_2_gallons_lifetime_v1
+        unit_of_measurement: gal
+        state_class: total_increasing
+        state: "{{ states('sensor.nedorachio_irrigation_controller_zone_2_gallons_total') | float(0) | round(1) }}"
+      - name: "Nedorachio zone 3 gallons lifetime"
+        unique_id: nedorachio_zone_3_gallons_lifetime_v1
+        unit_of_measurement: gal
+        state_class: total_increasing
+        state: "{{ states('sensor.nedorachio_irrigation_controller_zone_3_gallons_total') | float(0) | round(1) }}"
+      - name: "Nedorachio zone 4 gallons lifetime"
+        unique_id: nedorachio_zone_4_gallons_lifetime_v1
+        unit_of_measurement: gal
+        state_class: total_increasing
+        state: "{{ states('sensor.nedorachio_irrigation_controller_zone_4_gallons_total') | float(0) | round(1) }}"
+      - name: "Nedorachio zone 5 gallons lifetime"
+        unique_id: nedorachio_zone_5_gallons_lifetime_v1
+        unit_of_measurement: gal
+        state_class: total_increasing
+        state: "{{ states('sensor.nedorachio_irrigation_controller_zone_5_gallons_total') | float(0) | round(1) }}"
+      - name: "Nedorachio zone 6 gallons lifetime"
+        unique_id: nedorachio_zone_6_gallons_lifetime_v1
+        unit_of_measurement: gal
+        state_class: total_increasing
+        state: "{{ states('sensor.nedorachio_irrigation_controller_zone_6_gallons_total') | float(0) | round(1) }}"
+      - name: "Nedorachio zone 7 gallons lifetime"
+        unique_id: nedorachio_zone_7_gallons_lifetime_v1
+        unit_of_measurement: gal
+        state_class: total_increasing
+        state: "{{ states('sensor.nedorachio_irrigation_controller_zone_7_gallons_total') | float(0) | round(1) }}"
+      - name: "Nedorachio zone 8 gallons lifetime"
+        unique_id: nedorachio_zone_8_gallons_lifetime_v1
+        unit_of_measurement: gal
+        state_class: total_increasing
+        state: "{{ states('sensor.nedorachio_irrigation_controller_zone_8_gallons_total') | float(0) | round(1) }}"
+      - name: "Nedorachio zone 1 gallons last 7 days"
+        unique_id: nedorachio_zone_1_gallons_7d_v1
+        unit_of_measurement: gal
+        state: >-
+          {% set lifetime = states('sensor.nedorachio_zone_1_gallons_lifetime') | float(0) %}
+          {% set rolling = states('sensor.nedorachio_zone_1_gallons_7d_rolling') %}
+          {% if rolling not in ['unknown', 'unavailable', 'none', ''] and rolling | float(0) > 0 %}
+            {{ rolling | float(0) | round(1) }}
+          {% else %}
+            {{ lifetime | round(1) }}
+          {% endif %}
+      - name: "Nedorachio zone 2 gallons last 7 days"
+        unique_id: nedorachio_zone_2_gallons_7d_v1
+        unit_of_measurement: gal
+        state: >-
+          {% set lifetime = states('sensor.nedorachio_zone_2_gallons_lifetime') | float(0) %}
+          {% set rolling = states('sensor.nedorachio_zone_2_gallons_7d_rolling') %}
+          {% if rolling not in ['unknown', 'unavailable', 'none', ''] and rolling | float(0) > 0 %}
+            {{ rolling | float(0) | round(1) }}
+          {% else %}
+            {{ lifetime | round(1) }}
+          {% endif %}
+      - name: "Nedorachio zone 3 gallons last 7 days"
+        unique_id: nedorachio_zone_3_gallons_7d_v1
+        unit_of_measurement: gal
+        state: >-
+          {% set lifetime = states('sensor.nedorachio_zone_3_gallons_lifetime') | float(0) %}
+          {% set rolling = states('sensor.nedorachio_zone_3_gallons_7d_rolling') %}
+          {% if rolling not in ['unknown', 'unavailable', 'none', ''] and rolling | float(0) > 0 %}
+            {{ rolling | float(0) | round(1) }}
+          {% else %}
+            {{ lifetime | round(1) }}
+          {% endif %}
+      - name: "Nedorachio zone 4 gallons last 7 days"
+        unique_id: nedorachio_zone_4_gallons_7d_v1
+        unit_of_measurement: gal
+        state: >-
+          {% set lifetime = states('sensor.nedorachio_zone_4_gallons_lifetime') | float(0) %}
+          {% set rolling = states('sensor.nedorachio_zone_4_gallons_7d_rolling') %}
+          {% if rolling not in ['unknown', 'unavailable', 'none', ''] and rolling | float(0) > 0 %}
+            {{ rolling | float(0) | round(1) }}
+          {% else %}
+            {{ lifetime | round(1) }}
+          {% endif %}
+      - name: "Nedorachio zone 5 gallons last 7 days"
+        unique_id: nedorachio_zone_5_gallons_7d_v1
+        unit_of_measurement: gal
+        state: >-
+          {% set lifetime = states('sensor.nedorachio_zone_5_gallons_lifetime') | float(0) %}
+          {% set rolling = states('sensor.nedorachio_zone_5_gallons_7d_rolling') %}
+          {% if rolling not in ['unknown', 'unavailable', 'none', ''] and rolling | float(0) > 0 %}
+            {{ rolling | float(0) | round(1) }}
+          {% else %}
+            {{ lifetime | round(1) }}
+          {% endif %}
+      - name: "Nedorachio zone 6 gallons last 7 days"
+        unique_id: nedorachio_zone_6_gallons_7d_v1
+        unit_of_measurement: gal
+        state: >-
+          {% set lifetime = states('sensor.nedorachio_zone_6_gallons_lifetime') | float(0) %}
+          {% set rolling = states('sensor.nedorachio_zone_6_gallons_7d_rolling') %}
+          {% if rolling not in ['unknown', 'unavailable', 'none', ''] and rolling | float(0) > 0 %}
+            {{ rolling | float(0) | round(1) }}
+          {% else %}
+            {{ lifetime | round(1) }}
+          {% endif %}
+      - name: "Nedorachio zone 7 gallons last 7 days"
+        unique_id: nedorachio_zone_7_gallons_7d_v1
+        unit_of_measurement: gal
+        state: >-
+          {% set lifetime = states('sensor.nedorachio_zone_7_gallons_lifetime') | float(0) %}
+          {% set rolling = states('sensor.nedorachio_zone_7_gallons_7d_rolling') %}
+          {% if rolling not in ['unknown', 'unavailable', 'none', ''] and rolling | float(0) > 0 %}
+            {{ rolling | float(0) | round(1) }}
+          {% else %}
+            {{ lifetime | round(1) }}
+          {% endif %}
+      - name: "Nedorachio zone 8 gallons last 7 days"
+        unique_id: nedorachio_zone_8_gallons_7d_v1
+        unit_of_measurement: gal
+        state: >-
+          {% set lifetime = states('sensor.nedorachio_zone_8_gallons_lifetime') | float(0) %}
+          {% set rolling = states('sensor.nedorachio_zone_8_gallons_7d_rolling') %}
+          {% if rolling not in ['unknown', 'unavailable', 'none', ''] and rolling | float(0) > 0 %}
+            {{ rolling | float(0) | round(1) }}
+          {% else %}
+            {{ lifetime | round(1) }}
+          {% endif %}
+
+sensor:
+  - platform: statistics
+    name: "Nedorachio zone 1 gallons 7d rolling"
+    unique_id: nedorachio_zone_1_gallons_7d_rolling_v1
+    entity_id: sensor.nedorachio_zone_1_gallons_lifetime
+    state_characteristic: change
+    max_age:
+      days: 7
+    sampling_size: 9999
+    precision: 1
+    unit_of_measurement: gal
+  - platform: statistics
+    name: "Nedorachio zone 2 gallons 7d rolling"
+    unique_id: nedorachio_zone_2_gallons_7d_rolling_v1
+    entity_id: sensor.nedorachio_zone_2_gallons_lifetime
+    state_characteristic: change
+    max_age:
+      days: 7
+    sampling_size: 9999
+    precision: 1
+    unit_of_measurement: gal
+  - platform: statistics
+    name: "Nedorachio zone 3 gallons 7d rolling"
+    unique_id: nedorachio_zone_3_gallons_7d_rolling_v1
+    entity_id: sensor.nedorachio_zone_3_gallons_lifetime
+    state_characteristic: change
+    max_age:
+      days: 7
+    sampling_size: 9999
+    precision: 1
+    unit_of_measurement: gal
+  - platform: statistics
+    name: "Nedorachio zone 4 gallons 7d rolling"
+    unique_id: nedorachio_zone_4_gallons_7d_rolling_v1
+    entity_id: sensor.nedorachio_zone_4_gallons_lifetime
+    state_characteristic: change
+    max_age:
+      days: 7
+    sampling_size: 9999
+    precision: 1
+    unit_of_measurement: gal
+  - platform: statistics
+    name: "Nedorachio zone 5 gallons 7d rolling"
+    unique_id: nedorachio_zone_5_gallons_7d_rolling_v1
+    entity_id: sensor.nedorachio_zone_5_gallons_lifetime
+    state_characteristic: change
+    max_age:
+      days: 7
+    sampling_size: 9999
+    precision: 1
+    unit_of_measurement: gal
+  - platform: statistics
+    name: "Nedorachio zone 6 gallons 7d rolling"
+    unique_id: nedorachio_zone_6_gallons_7d_rolling_v1
+    entity_id: sensor.nedorachio_zone_6_gallons_lifetime
+    state_characteristic: change
+    max_age:
+      days: 7
+    sampling_size: 9999
+    precision: 1
+    unit_of_measurement: gal
+  - platform: statistics
+    name: "Nedorachio zone 7 gallons 7d rolling"
+    unique_id: nedorachio_zone_7_gallons_7d_rolling_v1
+    entity_id: sensor.nedorachio_zone_7_gallons_lifetime
+    state_characteristic: change
+    max_age:
+      days: 7
+    sampling_size: 9999
+    precision: 1
+    unit_of_measurement: gal
+  - platform: statistics
+    name: "Nedorachio zone 8 gallons 7d rolling"
+    unique_id: nedorachio_zone_8_gallons_7d_rolling_v1
+    entity_id: sensor.nedorachio_zone_8_gallons_lifetime
+    state_characteristic: change
+    max_age:
+      days: 7
+    sampling_size: 9999
+    precision: 1
+    unit_of_measurement: gal
 
 automation:
   - id: nedorachio_weather_feeder

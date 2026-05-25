@@ -12,6 +12,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 HA_PACKAGE = REPO_ROOT / "homeassistant" / "packages" / "nedorachio.yaml"
 HA_DASHBOARD = REPO_ROOT / "homeassistant" / "packages" / "nedorachio-dashboard.yaml"
 FIRMWARE_COMPONENT = REPO_ROOT / "firmware" / "packages" / "10-nedorachio-component.yaml"
+FIRMWARE_COMPONENT_CPP = REPO_ROOT / "firmware" / "components" / "nedorachio" / "nedorachio_component.cpp"
 FIRMWARE_CONFIG = REPO_ROOT / "firmware" / "packages" / "11-config-profile.yaml"
 
 
@@ -134,6 +135,57 @@ def check_ha_dashboard_master_schedule() -> list[str]:
     return violations
 
 
+def check_ha_gallons_tracking() -> list[str]:
+    pkg = _read(HA_PACKAGE)
+    dash = _read(HA_DASHBOARD)
+    fw = _read(FIRMWARE_COMPONENT)
+    violations: list[str] = []
+    for z in range(1, 9):
+        device_total = f"sensor.nedorachio_irrigation_controller_zone_{z}_gallons_total"
+        if device_total not in pkg:
+            violations.append(f"HA package must mirror device gallons total {device_total}")
+        if f"nedorachio_zone_{z}_gallons_lifetime_v1" not in pkg:
+            violations.append(f"Missing template sensor nedorachio_zone_{z}_gallons_lifetime")
+        if f"nedorachio_zone_{z}_gallons_7d_v1" not in pkg:
+            violations.append(f"Missing 7-day display template sensor nedorachio_zone_{z}_gallons_7d")
+        if f"nedorachio_zone_{z}_gallons_7d_rolling_v1" not in pkg:
+            violations.append(f"Missing 7-day statistics sensor nedorachio_zone_{z}_gallons_7d_rolling")
+        if f"sensor.nedorachio_zone_{z}_gallons_last_7_days" not in dash:
+            violations.append(f"Dashboard must reference sensor.nedorachio_zone_{z}_gallons_last_7_days")
+        if f"zone_{z}_gallons_total_sensor" not in fw:
+            violations.append(f"Firmware missing zone {z} gallons total sensor")
+    if "input_number:" in pkg and "gallons_lifetime" in pkg:
+        violations.append("Gallons totals must come from device sensors, not HA input_number counters")
+    if "nedorachio_record_gallons_delivery" in pkg:
+        violations.append("Gallons must not use HA delivery-event accumulation automations")
+    if "nedorachio_reset_weekly_gallons" in pkg:
+        violations.append("Use rolling 7-day statistics sensors instead of weekly reset counters")
+    if "utility_meter:" in pkg:
+        violations.append("Use statistics sensors for rolling 7-day gallons, not utility_meter")
+    if "platform: statistics" not in pkg:
+        violations.append("7-day gallons must use statistics platform sensors")
+    if "gallons_7d_rolling" not in pkg:
+        violations.append("Missing internal statistics sensors for 7-day gallons rolling totals")
+    if "recorder.get_statistics" in pkg:
+        violations.append("Use statistics platform for 7-day gallons, not recorder.get_statistics triggers")
+    if "statistics-graph" not in dash or "Gallons by zone (last 7 days)" not in dash:
+        violations.append("Dashboard must include 7-day gallons statistics-graph")
+    if "Gallons last 7 days (rolling)" not in dash:
+        violations.append("Dashboard must show rolling 7-day gallons totals")
+    if "state_class: total_increasing" not in fw or "Zone 1 gallons total" not in fw:
+        violations.append("Firmware zone gallons sensors must use state_class total_increasing")
+    if "last_gallons_delivery_text" in fw:
+        violations.append("Firmware must not expose delivery-event text for HA-side accumulation")
+    if "ha_pub_z1_gallons" in fw:
+        violations.append("Gallons tracking must use device sensors, not ESP->HA input_number publish")
+    if "device_class: water" in pkg:
+        violations.append("Gallon template sensors must not use device_class water (HA converts to L)")
+    cpp = _read(FIRMWARE_COMPONENT_CPP)
+    if "zone_gallons_pref_" not in cpp:
+        violations.append("Firmware must persist zone gallons totals across restarts")
+    return violations
+
+
 def all_ha_integration_violations() -> list[str]:
     checks = [
         check_ha_no_config_sync,
@@ -144,6 +196,7 @@ def all_ha_integration_violations() -> list[str]:
         check_nedorachio_yaml_includes_config_package,
         check_ha_dashboard_no_config_sync,
         check_ha_dashboard_master_schedule,
+        check_ha_gallons_tracking,
     ]
     violations: list[str] = []
     for check in checks:

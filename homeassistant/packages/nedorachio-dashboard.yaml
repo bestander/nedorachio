@@ -80,3 +80,46 @@ views:
             name: Zone 7 next run (local)
           - entity: sensor.nedorachio_zone_8_next_run_local
             name: Zone 8 next run (local)
+      - type: statistics-graph
+        title: Gallons by zone (last 7 days)
+        chart_type: bar
+        days_to_show: 7
+        period: day
+        stat_types:
+          - change
+        entities:
+          - entity: sensor.nedorachio_zone_1_gallons_lifetime
+            name: Left
+          - entity: sensor.nedorachio_zone_2_gallons_lifetime
+            name: Right
+          - entity: sensor.nedorachio_zone_3_gallons_lifetime
+            name: Back
+          - entity: sensor.nedorachio_zone_4_gallons_lifetime
+            name: Drip
+          - entity: sensor.nedorachio_zone_5_gallons_lifetime
+            name: Zone 5
+          - entity: sensor.nedorachio_zone_6_gallons_lifetime
+            name: Zone 6
+          - entity: sensor.nedorachio_zone_7_gallons_lifetime
+            name: Zone 7
+          - entity: sensor.nedorachio_zone_8_gallons_lifetime
+            name: Zone 8
+      - type: entities
+        title: Gallons last 7 days (rolling)
+        entities:
+          - entity: sensor.nedorachio_zone_1_gallons_last_7_days
+            name: Left
+          - entity: sensor.nedorachio_zone_2_gallons_last_7_days
+            name: Right
+          - entity: sensor.nedorachio_zone_3_gallons_last_7_days
+            name: Back
+          - entity: sensor.nedorachio_zone_4_gallons_last_7_days
+            name: Drip
+          - entity: sensor.nedorachio_zone_5_gallons_last_7_days
+            name: Zone 5
+          - entity: sensor.nedorachio_zone_6_gallons_last_7_days
+            name: Zone 6
+          - entity: sensor.nedorachio_zone_7_gallons_last_7_days
+            name: Zone 7
+          - entity: sensor.nedorachio_zone_8_gallons_last_7_days
+            name: Zone 8

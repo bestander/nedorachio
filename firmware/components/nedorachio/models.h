@@ -65,6 +65,7 @@ struct ZoneRuntime {
   uint32_t last_finished_epoch{0};
   uint32_t scheduled_next_epoch{0};
   float cycle_delivered_gallons{0.0f};
+  float gallons_total{0.0f};
   bool actual_state{false};
 };
 

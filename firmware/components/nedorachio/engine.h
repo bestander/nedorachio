@@ -58,6 +58,11 @@ class IrrigationEngine {
   }
   const char *current_phase() const;
   const char *last_run_outcome() const { return this->last_run_outcome_; }
+  int last_completed_zone() const { return this->last_completed_zone_; }
+  float last_run_gallons() const { return this->last_run_gallons_; }
+  uint32_t gallons_completion_sequence() const { return this->gallons_completion_sequence_; }
+  float zone_gallons_total(int zone_id) const;
+  void set_zone_gallons_total(int zone_id, float gallons);
  private:
   void drive_zone(int zone_id, bool on, bool stamp_cadence);
   void cadence_evaluator(uint32_t now_epoch, bool ha_time_valid);
@@ -67,6 +72,7 @@ class IrrigationEngine {
   void step_run(uint32_t now_epoch, uint32_t now_ms);
   bool preflight(uint32_t now_epoch, bool is_schedule);
   void set_phase_(EnginePhase next, const char *reason);
+  void record_gallons_delivery_(int zone_id, float gallons);
   float read_pressure(bool zone_on) const;
   float read_flow_gpm() const;
   float read_flow_total() const;
@@ -104,6 +110,9 @@ class IrrigationEngine {
   bool run_cancel_requested_{false};
   char run_cancel_cause_[32]{};
   char last_run_outcome_[48]{""};
+  int last_completed_zone_{0};
+  float last_run_gallons_{0.0f};
+  uint32_t gallons_completion_sequence_{0};
 
   uint32_t tick_count_{0};
   bool last_ha_time_valid_{false};

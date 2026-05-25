@@ -174,6 +174,71 @@ sensor:
     update_interval: 30s
     lambda: 'return id(irrigation).get_zone_scheduled_next(8);'
 
+  - platform: template
+    name: "Zone 1 gallons total"
+    id: zone_1_gallons_total_sensor
+    unit_of_measurement: "gal"
+    accuracy_decimals: 1
+    state_class: total_increasing
+    update_interval: 5s
+    lambda: 'return id(irrigation).get_zone_gallons_total(1);'
+  - platform: template
+    name: "Zone 2 gallons total"
+    id: zone_2_gallons_total_sensor
+    unit_of_measurement: "gal"
+    accuracy_decimals: 1
+    state_class: total_increasing
+    update_interval: 5s
+    lambda: 'return id(irrigation).get_zone_gallons_total(2);'
+  - platform: template
+    name: "Zone 3 gallons total"
+    id: zone_3_gallons_total_sensor
+    unit_of_measurement: "gal"
+    accuracy_decimals: 1
+    state_class: total_increasing
+    update_interval: 5s
+    lambda: 'return id(irrigation).get_zone_gallons_total(3);'
+  - platform: template
+    name: "Zone 4 gallons total"
+    id: zone_4_gallons_total_sensor
+    unit_of_measurement: "gal"
+    accuracy_decimals: 1
+    state_class: total_increasing
+    update_interval: 5s
+    lambda: 'return id(irrigation).get_zone_gallons_total(4);'
+  - platform: template
+    name: "Zone 5 gallons total"
+    id: zone_5_gallons_total_sensor
+    unit_of_measurement: "gal"
+    accuracy_decimals: 1
+    state_class: total_increasing
+    update_interval: 5s
+    lambda: 'return id(irrigation).get_zone_gallons_total(5);'
+  - platform: template
+    name: "Zone 6 gallons total"
+    id: zone_6_gallons_total_sensor
+    unit_of_measurement: "gal"
+    accuracy_decimals: 1
+    state_class: total_increasing
+    update_interval: 5s
+    lambda: 'return id(irrigation).get_zone_gallons_total(6);'
+  - platform: template
+    name: "Zone 7 gallons total"
+    id: zone_7_gallons_total_sensor
+    unit_of_measurement: "gal"
+    accuracy_decimals: 1
+    state_class: total_increasing
+    update_interval: 5s
+    lambda: 'return id(irrigation).get_zone_gallons_total(7);'
+  - platform: template
+    name: "Zone 8 gallons total"
+    id: zone_8_gallons_total_sensor
+    unit_of_measurement: "gal"
+    accuracy_decimals: 1
+    state_class: total_increasing
+    update_interval: 5s
+    lambda: 'return id(irrigation).get_zone_gallons_total(8);'
+
   - platform: homeassistant
     name: "HA zone 1 last watering epoch"
     id: ha_zone_1_last_watering_epoch
@@ -326,17 +391,18 @@ interval:
     then:
       - lambda: |-
           auto req = id(irrigation).consume_ha_publish_request();
-          if (req.zone <= 0) return;
-          id(ha_publish_epoch) = req.epoch;
-          switch (req.zone) {
-            case 1: id(ha_pub_z1_last_watering).execute(); break;
-            case 2: id(ha_pub_z2_last_watering).execute(); break;
-            case 3: id(ha_pub_z3_last_watering).execute(); break;
-            case 4: id(ha_pub_z4_last_watering).execute(); break;
-            case 5: id(ha_pub_z5_last_watering).execute(); break;
-            case 6: id(ha_pub_z6_last_watering).execute(); break;
-            case 7: id(ha_pub_z7_last_watering).execute(); break;
-            case 8: id(ha_pub_z8_last_watering).execute(); break;
+          if (req.zone > 0) {
+            id(ha_publish_epoch) = req.epoch;
+            switch (req.zone) {
+              case 1: id(ha_pub_z1_last_watering).execute(); break;
+              case 2: id(ha_pub_z2_last_watering).execute(); break;
+              case 3: id(ha_pub_z3_last_watering).execute(); break;
+              case 4: id(ha_pub_z4_last_watering).execute(); break;
+              case 5: id(ha_pub_z5_last_watering).execute(); break;
+              case 6: id(ha_pub_z6_last_watering).execute(); break;
+              case 7: id(ha_pub_z7_last_watering).execute(); break;
+              case 8: id(ha_pub_z8_last_watering).execute(); break;
+            }
           }
 
 switch:
