@@ -71,6 +71,18 @@ def test_master_schedule_on_plans_eligible_zone():
     zones = [ZoneRuntimeState(weekly_delivered_shadow=0.0) for _ in range(8)]
 
     update_scheduled_next_epochs(cfg, zones, now_epoch=now, tz=tz, ha_time_valid=True)
+    assert zones[0].scheduled_next_epoch == int(
+        datetime(2026, 5, 24, 23, 0, tzinfo=tz).timestamp()
+    )
+
+
+def test_master_schedule_on_inside_watering_window_uses_now():
+    tz = ZoneInfo("America/New_York")
+    now = int(datetime(2026, 5, 25, 2, 0, tzinfo=tz).timestamp())
+    cfg = operational_config_from_profile(load_repo_profile())
+    zones = [ZoneRuntimeState(weekly_delivered_shadow=0.0) for _ in range(8)]
+
+    update_scheduled_next_epochs(cfg, zones, now_epoch=now, tz=tz, ha_time_valid=True)
     assert zones[0].scheduled_next_epoch == now
 
 

@@ -132,6 +132,60 @@ def is_blackout_day(*, dow_mon0: int, blackout_weekday_bitmask: int) -> bool:
     return bool((blackout_weekday_bitmask >> dow_mon0) & 1)
 
 
+def next_schedule_opportunity_epoch(
+    earliest_epoch: int,
+    *,
+    tz: ZoneInfo,
+    start_hour: int,
+    start_minute: int,
+    end_hour: int,
+    end_minute: int,
+    blackout_weekday_bitmask: int,
+) -> int:
+    """Earliest epoch >= earliest_epoch when scheduled runs may start."""
+    if earliest_epoch <= 0:
+        return 0
+    t = earliest_epoch
+    for _ in range(14):
+        dt = datetime.fromtimestamp(t, tz=tz)
+        dow = dt.weekday()
+        if is_blackout_day(dow_mon0=dow, blackout_weekday_bitmask=blackout_weekday_bitmask):
+            midnight_next = (dt + timedelta(days=1)).replace(
+                hour=0, minute=0, second=0, microsecond=0
+            )
+            t = int(midnight_next.timestamp())
+            continue
+        if in_watering_window(
+            hour=dt.hour,
+            minute=dt.minute,
+            start_hour=start_hour,
+            start_minute=start_minute,
+            end_hour=end_hour,
+            end_minute=end_minute,
+        ):
+            return t
+        now_min = dt.hour * 60 + dt.minute
+        start_min = start_hour * 60 + start_minute
+        end_min = end_hour * 60 + end_minute
+        if start_min < end_min:
+            if now_min < start_min:
+                candidate = dt.replace(
+                    hour=start_hour, minute=start_minute, second=0, microsecond=0
+                )
+            else:
+                candidate = (dt + timedelta(days=1)).replace(
+                    hour=start_hour, minute=start_minute, second=0, microsecond=0
+                )
+        else:
+            candidate = dt.replace(
+                hour=start_hour, minute=start_minute, second=0, microsecond=0
+            )
+            if int(candidate.timestamp()) < t:
+                candidate += timedelta(days=1)
+        t = max(t, int(candidate.timestamp()))
+    return t
+
+
 def zone_has_weekly_deficit(
     config: OperationalConfig,
     zone: ZoneRuntimeState,
@@ -261,9 +315,25 @@ def compute_zone_plans(
         if goal_met:
             next_eligible = next_calendar_week_start_epoch(now_epoch, tz=tz)
         elif zs.last_attempt_epoch > 0 and cooldown_s > 0:
-            next_eligible = zs.last_attempt_epoch + cooldown_s
+            next_eligible = next_schedule_opportunity_epoch(
+                zs.last_attempt_epoch + cooldown_s,
+                tz=tz,
+                start_hour=config.schedule_start_hour,
+                start_minute=config.schedule_start_minute,
+                end_hour=config.schedule_end_hour,
+                end_minute=config.schedule_end_minute,
+                blackout_weekday_bitmask=config.blackout_weekday_bitmask,
+            )
         elif blocked_reason is None:
-            next_eligible = now_epoch
+            next_eligible = next_schedule_opportunity_epoch(
+                now_epoch,
+                tz=tz,
+                start_hour=config.schedule_start_hour,
+                start_minute=config.schedule_start_minute,
+                end_hour=config.schedule_end_hour,
+                end_minute=config.schedule_end_minute,
+                blackout_weekday_bitmask=config.blackout_weekday_bitmask,
+            )
 
         plans[zid] = ZonePlan(
             zone_id=zid,

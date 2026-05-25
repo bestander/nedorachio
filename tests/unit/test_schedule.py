@@ -8,6 +8,7 @@ from nedorachio.schedule import (
     compute_zone_plans,
     effective_weekly_goal,
     next_calendar_week_start_epoch,
+    next_schedule_opportunity_epoch,
     pick_next_zone_round_robin,
     rain_credit_gallons_per_zone,
     update_scheduled_next_epochs,
@@ -58,6 +59,89 @@ def test_accept_ha_weekly_update_rejects_decrease():
     assert accept_ha_weekly_update(350.0, 0.0) is False
     assert accept_ha_weekly_update(350.0, 360.0) is True
     assert accept_ha_weekly_update(0.0, 0.0) is True
+
+
+def test_next_schedule_opportunity_outside_watering_window():
+    tz = ZoneInfo("America/New_York")
+    mid_morning = _epoch(2026, 5, 25, 10, 36)
+    assert next_schedule_opportunity_epoch(
+        mid_morning,
+        tz=tz,
+        start_hour=23,
+        start_minute=0,
+        end_hour=9,
+        end_minute=0,
+        blackout_weekday_bitmask=(1 << 3) | (1 << 4),
+    ) == _epoch(2026, 5, 25, 23, 0)
+
+
+def test_next_schedule_opportunity_inside_watering_window():
+    tz = ZoneInfo("America/New_York")
+    overnight = _epoch(2026, 5, 25, 2, 0)
+    assert next_schedule_opportunity_epoch(
+        overnight,
+        tz=tz,
+        start_hour=23,
+        start_minute=0,
+        end_hour=9,
+        end_minute=0,
+        blackout_weekday_bitmask=0,
+    ) == overnight
+
+
+def test_next_schedule_opportunity_skips_blackout_before_window():
+    tz = ZoneInfo("America/New_York")
+    thu_afternoon = _epoch(2026, 5, 28, 15, 0)
+    assert next_schedule_opportunity_epoch(
+        thu_afternoon,
+        tz=tz,
+        start_hour=23,
+        start_minute=0,
+        end_hour=9,
+        end_minute=0,
+        blackout_weekday_bitmask=(1 << 3) | (1 << 4),
+    ) == _epoch(2026, 5, 30, 0, 0)
+
+
+def test_compute_zone_plans_mid_morning_next_run_is_window_start():
+    config = OperationalConfig(
+        zones_enabled_bitmask=1,
+        fallback_schedule_enabled=True,
+        schedule_start_hour=23,
+        schedule_end_hour=9,
+    )
+    config.zones[0].weekly_goal_gallons = 100.0
+    zones = [ZoneRuntimeState(weekly_delivered_shadow=0.0)]
+    plans = compute_zone_plans(
+        config,
+        zones,
+        now_epoch=_epoch(2026, 5, 25, 10, 36),
+        tz=ZoneInfo("America/New_York"),
+        ha_time_valid=True,
+    )
+    assert plans[1].blocked_reason is None
+    assert plans[1].next_eligible_epoch == _epoch(2026, 5, 25, 23, 0)
+
+
+def test_compute_zone_plans_cooldown_clamped_to_watering_window():
+    config = OperationalConfig(
+        zones_enabled_bitmask=1,
+        fallback_schedule_enabled=True,
+        schedule_start_hour=23,
+        schedule_end_hour=9,
+        attempt_cooldown_minutes=20,
+    )
+    config.zones[0].weekly_goal_gallons = 100.0
+    zones = [ZoneRuntimeState(weekly_delivered_shadow=0.0, last_attempt_epoch=_epoch(2026, 5, 25, 10, 15))]
+    plans = compute_zone_plans(
+        config,
+        zones,
+        now_epoch=_epoch(2026, 5, 25, 10, 20),
+        tz=ZoneInfo("America/New_York"),
+        ha_time_valid=True,
+    )
+    assert plans[1].blocked_reason == "attempt_cooldown"
+    assert plans[1].next_eligible_epoch == _epoch(2026, 5, 25, 23, 0)
 
 
 def test_calendar_week_id_monday_boundary():

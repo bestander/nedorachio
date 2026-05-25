@@ -38,6 +38,54 @@ uint32_t next_calendar_week_start_epoch(uint32_t epoch, bool ha_time_valid) {
   return (uint32_t) (this_monday + 7 * 86400);
 }
 
+uint32_t next_schedule_opportunity_epoch(uint32_t earliest_epoch, bool ha_time_valid, const GlobalConfig &g) {
+  if (earliest_epoch == 0)
+    return 0;
+  uint32_t t = earliest_epoch;
+  for (int step = 0; step < 14; step++) {
+    struct tm lt {};
+    local_tm_from_epoch(t, ha_time_valid, lt);
+    const int dow = (lt.tm_wday + 6) % 7;
+    if (is_blackout_day(dow, g.blackout_weekday_bitmask)) {
+      struct tm next_day = lt;
+      next_day.tm_hour = 0;
+      next_day.tm_min = 0;
+      next_day.tm_sec = 0;
+      next_day.tm_mday += 1;
+      time_t next_ts = mktime(&next_day);
+      if (next_ts == -1)
+        return t;
+      t = static_cast<uint32_t>(next_ts);
+      continue;
+    }
+    if (in_watering_window(lt.tm_hour, lt.tm_min, g))
+      return t;
+
+    const int now_min = lt.tm_hour * 60 + lt.tm_min;
+    const int start_min = g.schedule_start_hour * 60 + g.schedule_start_minute;
+    const int end_min = g.schedule_end_hour * 60 + g.schedule_end_minute;
+    struct tm candidate = lt;
+    candidate.tm_hour = g.schedule_start_hour;
+    candidate.tm_min = g.schedule_start_minute;
+    candidate.tm_sec = 0;
+    if (start_min < end_min) {
+      if (now_min >= start_min)
+        candidate.tm_mday += 1;
+    }
+    time_t candidate_ts = mktime(&candidate);
+    if (candidate_ts == -1)
+      return t;
+    if (static_cast<uint32_t>(candidate_ts) < t) {
+      candidate.tm_mday += 1;
+      candidate_ts = mktime(&candidate);
+      if (candidate_ts == -1)
+        return t;
+    }
+    t = std::max(t, static_cast<uint32_t>(candidate_ts));
+  }
+  return t;
+}
+
 }  // namespace
 
 bool in_watering_window(int hour, int minute, const GlobalConfig &g) {
@@ -170,9 +218,9 @@ void update_scheduled_next_epochs(const OperationalConfig &cfg, ZoneRuntime *zon
     if (goal_met) {
       next_eligible = next_calendar_week_start_epoch(now_epoch, ha_time_valid);
     } else if (zs.last_attempt_epoch > 0 && cooldown_s > 0) {
-      next_eligible = zs.last_attempt_epoch + cooldown_s;
+      next_eligible = next_schedule_opportunity_epoch(zs.last_attempt_epoch + cooldown_s, ha_time_valid, cfg.global);
     } else {
-      next_eligible = now_epoch;
+      next_eligible = next_schedule_opportunity_epoch(now_epoch, ha_time_valid, cfg.global);
     }
     zones[zid - 1].scheduled_next_epoch = next_eligible;
   }

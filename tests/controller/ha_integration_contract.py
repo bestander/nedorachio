@@ -172,10 +172,15 @@ def check_ha_weekly_gallons_tracking() -> list[str]:
     if "nedorachio_sync_zone_gallons_lifetime" not in pkg:
         violations.append("Missing sync automation for HA-persisted zone gallons lifetime")
     fw_engine = REPO_ROOT / "firmware" / "components" / "nedorachio" / "engine.cpp"
+    fw_schedule = REPO_ROOT / "firmware" / "components" / "nedorachio" / "schedule.cpp"
     if fw_engine.is_file():
         engine_text = _read(fw_engine)
         if "accept_ha_weekly_update" not in engine_text:
             violations.append("Firmware must reject stale HA weekly_delivered decreases")
+    if fw_schedule.is_file():
+        schedule_text = _read(fw_schedule)
+        if "next_schedule_opportunity_epoch" not in schedule_text:
+            violations.append("Firmware must clamp scheduled next run to watering window")
     return violations
 
 
