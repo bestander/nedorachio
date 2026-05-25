@@ -189,6 +189,63 @@ input_number:
     mode: box
     initial: 0
 
+  nedorachio_zone_1_weekly_delivered_last:
+    name: "Nedorachio zone 1 weekly delivered last"
+    min: 0
+    max: 1000000
+    step: 0.1
+    mode: box
+    initial: 0
+  nedorachio_zone_2_weekly_delivered_last:
+    name: "Nedorachio zone 2 weekly delivered last"
+    min: 0
+    max: 1000000
+    step: 0.1
+    mode: box
+    initial: 0
+  nedorachio_zone_3_weekly_delivered_last:
+    name: "Nedorachio zone 3 weekly delivered last"
+    min: 0
+    max: 1000000
+    step: 0.1
+    mode: box
+    initial: 0
+  nedorachio_zone_4_weekly_delivered_last:
+    name: "Nedorachio zone 4 weekly delivered last"
+    min: 0
+    max: 1000000
+    step: 0.1
+    mode: box
+    initial: 0
+  nedorachio_zone_5_weekly_delivered_last:
+    name: "Nedorachio zone 5 weekly delivered last"
+    min: 0
+    max: 1000000
+    step: 0.1
+    mode: box
+    initial: 0
+  nedorachio_zone_6_weekly_delivered_last:
+    name: "Nedorachio zone 6 weekly delivered last"
+    min: 0
+    max: 1000000
+    step: 0.1
+    mode: box
+    initial: 0
+  nedorachio_zone_7_weekly_delivered_last:
+    name: "Nedorachio zone 7 weekly delivered last"
+    min: 0
+    max: 1000000
+    step: 0.1
+    mode: box
+    initial: 0
+  nedorachio_zone_8_weekly_delivered_last:
+    name: "Nedorachio zone 8 weekly delivered last"
+    min: 0
+    max: 1000000
+    step: 0.1
+    mode: box
+    initial: 0
+
 template:
   - sensor:
       - name: "Nedorachio rain intensity input"
@@ -697,11 +754,21 @@ template:
         unique_id: nedorachio_zone_1_weekly_delivered_v1
         unit_of_measurement: gal
         availability: >-
-          {{ states('input_number.nedorachio_zone_1_gallons_lifetime') not in ['unknown','unavailable','none', None]
-             and states('input_number.nedorachio_zone_1_week_baseline_gallons') not in ['unknown','unavailable','none', None] }}
+          {% set lifetime = states('input_number.nedorachio_zone_1_gallons_lifetime') | float(-1) %}
+          {% set baseline = states('input_number.nedorachio_zone_1_week_baseline_gallons') | float(-1) %}
+          {% set last = states('input_number.nedorachio_zone_1_weekly_delivered_last') | float(-1) %}
+          {{ lifetime >= 0 and baseline >= 0 and (
+               lifetime >= baseline or (last > 0 and baseline > 0 and lifetime < baseline)
+             ) }}
         state: >-
-          {{ [0, states('input_number.nedorachio_zone_1_gallons_lifetime') | float(0)
-            - states('input_number.nedorachio_zone_1_week_baseline_gallons') | float(0)] | max | round(1) }}
+          {% set lifetime = states('input_number.nedorachio_zone_1_gallons_lifetime') | float(0) %}
+          {% set baseline = states('input_number.nedorachio_zone_1_week_baseline_gallons') | float(0) %}
+          {% set last = states('input_number.nedorachio_zone_1_weekly_delivered_last') | float(0) %}
+          {% if lifetime >= baseline %}
+            {{ [0, lifetime - baseline] | max | round(1) }}
+          {% else %}
+            {{ last | round(1) }}
+          {% endif %}
       - name: "Nedorachio zone 1 weekly remaining"
         unique_id: nedorachio_zone_1_weekly_remaining_v1
         unit_of_measurement: gal
@@ -717,11 +784,21 @@ template:
         unique_id: nedorachio_zone_2_weekly_delivered_v1
         unit_of_measurement: gal
         availability: >-
-          {{ states('input_number.nedorachio_zone_2_gallons_lifetime') not in ['unknown','unavailable','none', None]
-             and states('input_number.nedorachio_zone_2_week_baseline_gallons') not in ['unknown','unavailable','none', None] }}
+          {% set lifetime = states('input_number.nedorachio_zone_2_gallons_lifetime') | float(-1) %}
+          {% set baseline = states('input_number.nedorachio_zone_2_week_baseline_gallons') | float(-1) %}
+          {% set last = states('input_number.nedorachio_zone_2_weekly_delivered_last') | float(-1) %}
+          {{ lifetime >= 0 and baseline >= 0 and (
+               lifetime >= baseline or (last > 0 and baseline > 0 and lifetime < baseline)
+             ) }}
         state: >-
-          {{ [0, states('input_number.nedorachio_zone_2_gallons_lifetime') | float(0)
-            - states('input_number.nedorachio_zone_2_week_baseline_gallons') | float(0)] | max | round(1) }}
+          {% set lifetime = states('input_number.nedorachio_zone_2_gallons_lifetime') | float(0) %}
+          {% set baseline = states('input_number.nedorachio_zone_2_week_baseline_gallons') | float(0) %}
+          {% set last = states('input_number.nedorachio_zone_2_weekly_delivered_last') | float(0) %}
+          {% if lifetime >= baseline %}
+            {{ [0, lifetime - baseline] | max | round(1) }}
+          {% else %}
+            {{ last | round(1) }}
+          {% endif %}
       - name: "Nedorachio zone 2 weekly remaining"
         unique_id: nedorachio_zone_2_weekly_remaining_v1
         unit_of_measurement: gal
@@ -737,11 +814,21 @@ template:
         unique_id: nedorachio_zone_3_weekly_delivered_v1
         unit_of_measurement: gal
         availability: >-
-          {{ states('input_number.nedorachio_zone_3_gallons_lifetime') not in ['unknown','unavailable','none', None]
-             and states('input_number.nedorachio_zone_3_week_baseline_gallons') not in ['unknown','unavailable','none', None] }}
+          {% set lifetime = states('input_number.nedorachio_zone_3_gallons_lifetime') | float(-1) %}
+          {% set baseline = states('input_number.nedorachio_zone_3_week_baseline_gallons') | float(-1) %}
+          {% set last = states('input_number.nedorachio_zone_3_weekly_delivered_last') | float(-1) %}
+          {{ lifetime >= 0 and baseline >= 0 and (
+               lifetime >= baseline or (last > 0 and baseline > 0 and lifetime < baseline)
+             ) }}
         state: >-
-          {{ [0, states('input_number.nedorachio_zone_3_gallons_lifetime') | float(0)
-            - states('input_number.nedorachio_zone_3_week_baseline_gallons') | float(0)] | max | round(1) }}
+          {% set lifetime = states('input_number.nedorachio_zone_3_gallons_lifetime') | float(0) %}
+          {% set baseline = states('input_number.nedorachio_zone_3_week_baseline_gallons') | float(0) %}
+          {% set last = states('input_number.nedorachio_zone_3_weekly_delivered_last') | float(0) %}
+          {% if lifetime >= baseline %}
+            {{ [0, lifetime - baseline] | max | round(1) }}
+          {% else %}
+            {{ last | round(1) }}
+          {% endif %}
       - name: "Nedorachio zone 3 weekly remaining"
         unique_id: nedorachio_zone_3_weekly_remaining_v1
         unit_of_measurement: gal
@@ -757,11 +844,21 @@ template:
         unique_id: nedorachio_zone_4_weekly_delivered_v1
         unit_of_measurement: gal
         availability: >-
-          {{ states('input_number.nedorachio_zone_4_gallons_lifetime') not in ['unknown','unavailable','none', None]
-             and states('input_number.nedorachio_zone_4_week_baseline_gallons') not in ['unknown','unavailable','none', None] }}
+          {% set lifetime = states('input_number.nedorachio_zone_4_gallons_lifetime') | float(-1) %}
+          {% set baseline = states('input_number.nedorachio_zone_4_week_baseline_gallons') | float(-1) %}
+          {% set last = states('input_number.nedorachio_zone_4_weekly_delivered_last') | float(-1) %}
+          {{ lifetime >= 0 and baseline >= 0 and (
+               lifetime >= baseline or (last > 0 and baseline > 0 and lifetime < baseline)
+             ) }}
         state: >-
-          {{ [0, states('input_number.nedorachio_zone_4_gallons_lifetime') | float(0)
-            - states('input_number.nedorachio_zone_4_week_baseline_gallons') | float(0)] | max | round(1) }}
+          {% set lifetime = states('input_number.nedorachio_zone_4_gallons_lifetime') | float(0) %}
+          {% set baseline = states('input_number.nedorachio_zone_4_week_baseline_gallons') | float(0) %}
+          {% set last = states('input_number.nedorachio_zone_4_weekly_delivered_last') | float(0) %}
+          {% if lifetime >= baseline %}
+            {{ [0, lifetime - baseline] | max | round(1) }}
+          {% else %}
+            {{ last | round(1) }}
+          {% endif %}
       - name: "Nedorachio zone 4 weekly remaining"
         unique_id: nedorachio_zone_4_weekly_remaining_v1
         unit_of_measurement: gal
@@ -777,11 +874,21 @@ template:
         unique_id: nedorachio_zone_5_weekly_delivered_v1
         unit_of_measurement: gal
         availability: >-
-          {{ states('input_number.nedorachio_zone_5_gallons_lifetime') not in ['unknown','unavailable','none', None]
-             and states('input_number.nedorachio_zone_5_week_baseline_gallons') not in ['unknown','unavailable','none', None] }}
+          {% set lifetime = states('input_number.nedorachio_zone_5_gallons_lifetime') | float(-1) %}
+          {% set baseline = states('input_number.nedorachio_zone_5_week_baseline_gallons') | float(-1) %}
+          {% set last = states('input_number.nedorachio_zone_5_weekly_delivered_last') | float(-1) %}
+          {{ lifetime >= 0 and baseline >= 0 and (
+               lifetime >= baseline or (last > 0 and baseline > 0 and lifetime < baseline)
+             ) }}
         state: >-
-          {{ [0, states('input_number.nedorachio_zone_5_gallons_lifetime') | float(0)
-            - states('input_number.nedorachio_zone_5_week_baseline_gallons') | float(0)] | max | round(1) }}
+          {% set lifetime = states('input_number.nedorachio_zone_5_gallons_lifetime') | float(0) %}
+          {% set baseline = states('input_number.nedorachio_zone_5_week_baseline_gallons') | float(0) %}
+          {% set last = states('input_number.nedorachio_zone_5_weekly_delivered_last') | float(0) %}
+          {% if lifetime >= baseline %}
+            {{ [0, lifetime - baseline] | max | round(1) }}
+          {% else %}
+            {{ last | round(1) }}
+          {% endif %}
       - name: "Nedorachio zone 5 weekly remaining"
         unique_id: nedorachio_zone_5_weekly_remaining_v1
         unit_of_measurement: gal
@@ -797,11 +904,21 @@ template:
         unique_id: nedorachio_zone_6_weekly_delivered_v1
         unit_of_measurement: gal
         availability: >-
-          {{ states('input_number.nedorachio_zone_6_gallons_lifetime') not in ['unknown','unavailable','none', None]
-             and states('input_number.nedorachio_zone_6_week_baseline_gallons') not in ['unknown','unavailable','none', None] }}
+          {% set lifetime = states('input_number.nedorachio_zone_6_gallons_lifetime') | float(-1) %}
+          {% set baseline = states('input_number.nedorachio_zone_6_week_baseline_gallons') | float(-1) %}
+          {% set last = states('input_number.nedorachio_zone_6_weekly_delivered_last') | float(-1) %}
+          {{ lifetime >= 0 and baseline >= 0 and (
+               lifetime >= baseline or (last > 0 and baseline > 0 and lifetime < baseline)
+             ) }}
         state: >-
-          {{ [0, states('input_number.nedorachio_zone_6_gallons_lifetime') | float(0)
-            - states('input_number.nedorachio_zone_6_week_baseline_gallons') | float(0)] | max | round(1) }}
+          {% set lifetime = states('input_number.nedorachio_zone_6_gallons_lifetime') | float(0) %}
+          {% set baseline = states('input_number.nedorachio_zone_6_week_baseline_gallons') | float(0) %}
+          {% set last = states('input_number.nedorachio_zone_6_weekly_delivered_last') | float(0) %}
+          {% if lifetime >= baseline %}
+            {{ [0, lifetime - baseline] | max | round(1) }}
+          {% else %}
+            {{ last | round(1) }}
+          {% endif %}
       - name: "Nedorachio zone 6 weekly remaining"
         unique_id: nedorachio_zone_6_weekly_remaining_v1
         unit_of_measurement: gal
@@ -817,11 +934,21 @@ template:
         unique_id: nedorachio_zone_7_weekly_delivered_v1
         unit_of_measurement: gal
         availability: >-
-          {{ states('input_number.nedorachio_zone_7_gallons_lifetime') not in ['unknown','unavailable','none', None]
-             and states('input_number.nedorachio_zone_7_week_baseline_gallons') not in ['unknown','unavailable','none', None] }}
+          {% set lifetime = states('input_number.nedorachio_zone_7_gallons_lifetime') | float(-1) %}
+          {% set baseline = states('input_number.nedorachio_zone_7_week_baseline_gallons') | float(-1) %}
+          {% set last = states('input_number.nedorachio_zone_7_weekly_delivered_last') | float(-1) %}
+          {{ lifetime >= 0 and baseline >= 0 and (
+               lifetime >= baseline or (last > 0 and baseline > 0 and lifetime < baseline)
+             ) }}
         state: >-
-          {{ [0, states('input_number.nedorachio_zone_7_gallons_lifetime') | float(0)
-            - states('input_number.nedorachio_zone_7_week_baseline_gallons') | float(0)] | max | round(1) }}
+          {% set lifetime = states('input_number.nedorachio_zone_7_gallons_lifetime') | float(0) %}
+          {% set baseline = states('input_number.nedorachio_zone_7_week_baseline_gallons') | float(0) %}
+          {% set last = states('input_number.nedorachio_zone_7_weekly_delivered_last') | float(0) %}
+          {% if lifetime >= baseline %}
+            {{ [0, lifetime - baseline] | max | round(1) }}
+          {% else %}
+            {{ last | round(1) }}
+          {% endif %}
       - name: "Nedorachio zone 7 weekly remaining"
         unique_id: nedorachio_zone_7_weekly_remaining_v1
         unit_of_measurement: gal
@@ -837,11 +964,21 @@ template:
         unique_id: nedorachio_zone_8_weekly_delivered_v1
         unit_of_measurement: gal
         availability: >-
-          {{ states('input_number.nedorachio_zone_8_gallons_lifetime') not in ['unknown','unavailable','none', None]
-             and states('input_number.nedorachio_zone_8_week_baseline_gallons') not in ['unknown','unavailable','none', None] }}
+          {% set lifetime = states('input_number.nedorachio_zone_8_gallons_lifetime') | float(-1) %}
+          {% set baseline = states('input_number.nedorachio_zone_8_week_baseline_gallons') | float(-1) %}
+          {% set last = states('input_number.nedorachio_zone_8_weekly_delivered_last') | float(-1) %}
+          {{ lifetime >= 0 and baseline >= 0 and (
+               lifetime >= baseline or (last > 0 and baseline > 0 and lifetime < baseline)
+             ) }}
         state: >-
-          {{ [0, states('input_number.nedorachio_zone_8_gallons_lifetime') | float(0)
-            - states('input_number.nedorachio_zone_8_week_baseline_gallons') | float(0)] | max | round(1) }}
+          {% set lifetime = states('input_number.nedorachio_zone_8_gallons_lifetime') | float(0) %}
+          {% set baseline = states('input_number.nedorachio_zone_8_week_baseline_gallons') | float(0) %}
+          {% set last = states('input_number.nedorachio_zone_8_weekly_delivered_last') | float(0) %}
+          {% if lifetime >= baseline %}
+            {{ [0, lifetime - baseline] | max | round(1) }}
+          {% else %}
+            {{ last | round(1) }}
+          {% endif %}
       - name: "Nedorachio zone 8 weekly remaining"
         unique_id: nedorachio_zone_8_weekly_remaining_v1
         unit_of_measurement: gal
@@ -937,6 +1074,39 @@ sensor:
     unit_of_measurement: gal
 
 automation:
+  - id: nedorachio_persist_weekly_delivered_last
+    alias: "Nedorachio: persist last known weekly delivered"
+    mode: queued
+    max: 10
+    trigger:
+      - platform: state
+        entity_id:
+          - sensor.nedorachio_zone_1_weekly_delivered
+          - sensor.nedorachio_zone_2_weekly_delivered
+          - sensor.nedorachio_zone_3_weekly_delivered
+          - sensor.nedorachio_zone_4_weekly_delivered
+          - sensor.nedorachio_zone_5_weekly_delivered
+          - sensor.nedorachio_zone_6_weekly_delivered
+          - sensor.nedorachio_zone_7_weekly_delivered
+          - sensor.nedorachio_zone_8_weekly_delivered
+    action:
+      - variables:
+          zone_num: "{{ trigger.entity_id.split('_')[2] }}"
+          lifetime: "{{ states('input_number.nedorachio_zone_' ~ zone_num ~ '_gallons_lifetime') | float(-1) }}"
+          baseline: "{{ states('input_number.nedorachio_zone_' ~ zone_num ~ '_week_baseline_gallons') | float(-1) }}"
+          delivered: "{{ trigger.to_state.state | float(-1) }}"
+          last_id: "input_number.nedorachio_zone_{{ zone_num }}_weekly_delivered_last"
+          last: "{{ states(last_id) | float(-1) }}"
+      - condition: template
+        value_template: >-
+          {{ lifetime >= 0 and baseline >= 0 and delivered >= 0 and lifetime >= baseline
+             and delivered | float(0) != last | float(-1) }}
+      - action: input_number.set_value
+        target:
+          entity_id: "{{ last_id }}"
+        data:
+          value: "{{ delivered | float(0) | round(1) }}"
+
   - id: nedorachio_sync_zone_gallons_lifetime
     alias: "Nedorachio: sync HA-persisted zone gallons lifetime"
     mode: queued
@@ -944,6 +1114,7 @@ automation:
     trigger:
       - platform: homeassistant
         event: start
+        id: ha_start
       - platform: state
         entity_id:
           - sensor.nedorachio_irrigation_controller_zone_1_gallons_total
@@ -954,7 +1125,42 @@ automation:
           - sensor.nedorachio_irrigation_controller_zone_6_gallons_total
           - sensor.nedorachio_irrigation_controller_zone_7_gallons_total
           - sensor.nedorachio_irrigation_controller_zone_8_gallons_total
+        id: device_total
     action:
+      - choose:
+          - conditions:
+              - condition: trigger
+                id: ha_start
+            sequence:
+              - delay: "00:00:03"
+              - repeat:
+                  for_each:
+                    - "1"
+                    - "2"
+                    - "3"
+                    - "4"
+                    - "5"
+                    - "6"
+                    - "7"
+                    - "8"
+                  sequence:
+                    - variables:
+                        stored_id: "input_number.nedorachio_zone_{{ repeat.item }}_gallons_lifetime"
+                        baseline_id: "input_number.nedorachio_zone_{{ repeat.item }}_week_baseline_gallons"
+                        last_id: "input_number.nedorachio_zone_{{ repeat.item }}_weekly_delivered_last"
+                        stored: "{{ states(stored_id) | float(0) }}"
+                        baseline: "{{ states(baseline_id) | float(0) }}"
+                        last: "{{ states(last_id) | float(0) }}"
+                        seed: "{{ (baseline | float(0) + last | float(0)) | round(1) }}"
+                    - condition: template
+                      value_template: >-
+                        {{ baseline | float(0) > 0 and last | float(0) > 0
+                           and stored | float(0) < baseline | float(0) }}
+                    - action: input_number.set_value
+                      target:
+                        entity_id: "{{ stored_id }}"
+                      data:
+                        value: "{{ seed }}"
       - repeat:
           for_each:
             - "1"
@@ -970,6 +1176,7 @@ automation:
                 device_id: "sensor.nedorachio_irrigation_controller_zone_{{ repeat.item }}_gallons_total"
                 stored_id: "input_number.nedorachio_zone_{{ repeat.item }}_gallons_lifetime"
                 baseline_id: "input_number.nedorachio_zone_{{ repeat.item }}_week_baseline_gallons"
+                last_id: "input_number.nedorachio_zone_{{ repeat.item }}_weekly_delivered_last"
                 device: >-
                   {% if states(device_id) not in ['unknown','unavailable','none', None] %}
                     {{ states(device_id) | float(0) }}
@@ -978,12 +1185,16 @@ automation:
                   {% endif %}
                 stored: "{{ states(stored_id) | float(0) }}"
                 baseline: "{{ states(baseline_id) | float(0) }}"
+                last: "{{ states(last_id) | float(0) }}"
                 new_lifetime: >-
                   {% set s = stored | float(0) %}
                   {% set b = baseline | float(0) %}
                   {% set d = device | float(-1) %}
+                  {% set l = last | float(0) %}
                   {% if d >= 0 %}
-                    {{ [s, d] | max }}
+                    {{ [s, d, b + l if b > 0 and l > 0 else 0] | max }}
+                  {% elif s == 0 and b > 0 and l > 0 %}
+                    {{ (b + l) | round(1) }}
                   {% elif s == 0 and b > 0 %}
                     {{ b }}
                   {% else %}
@@ -1024,6 +1235,11 @@ automation:
               data:
                 value: >-
                   {{ states('sensor.nedorachio_zone_' ~ repeat.item ~ '_gallons_lifetime') | float(0) }}
+            - action: input_number.set_value
+              target:
+                entity_id: "input_number.nedorachio_zone_{{ repeat.item }}_weekly_delivered_last"
+              data:
+                value: "0"
             - action: input_number.set_value
               target:
                 entity_id: input_number.nedorachio_rain_week_baseline_mm

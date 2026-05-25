@@ -26,9 +26,10 @@ weekly_delivered = zone_gallons_lifetime − week_baseline_gallons
 Baselines reset every **Monday 00:00** (configured timezone). Gallons lifetime is
 persisted in HA (`input_number.nedorachio_zone_N_gallons_lifetime`) and synced
 monotonically from the controller, so weekly progress survives a reflash even when
-ESP flash storage is empty. The ESP reads `sensor.nedorachio_zone_N_weekly_delivered`
-when online and keeps a local NVS shadow when HA is unreachable. The controller
-ignores HA reads that would lower weekly progress (including spurious 0 on reconnect).
+ESP flash storage is empty. Last-known weekly delivered is also persisted
+(`input_number.nedorachio_zone_N_weekly_delivered_last`) to recover when lifetime
+has not synced yet. The ESP reads `sensor.nedorachio_zone_N_weekly_delivered`
+when online; the controller ignores decreases (including spurious 0 on reconnect).
 
 **Rain credit:** observed rain this week reduces each zone's effective target
 (linear ratio, globally configurable — default **10 mm → 100 gal**). The physical

@@ -150,6 +150,8 @@ def check_ha_weekly_gallons_tracking() -> list[str]:
             violations.append(f"Missing input_number.nedorachio_zone_{z}_week_baseline_gallons")
         if f"nedorachio_zone_{z}_gallons_lifetime:" not in pkg:
             violations.append(f"Missing input_number.nedorachio_zone_{z}_gallons_lifetime")
+        if f"nedorachio_zone_{z}_weekly_delivered_last:" not in pkg:
+            violations.append(f"Missing input_number.nedorachio_zone_{z}_weekly_delivered_last")
         if f"zone_{z}_weekly_goal_gallons_sensor" not in fw:
             violations.append(f"Firmware missing zone {z} weekly_goal_gallons sensor")
         if f"input_number.nedorachio_zone_{z}_weekly_goal_gallons:" in pkg:
@@ -171,6 +173,10 @@ def check_ha_weekly_gallons_tracking() -> list[str]:
         violations.append("Missing Monday weekly baseline reset automation")
     if "nedorachio_sync_zone_gallons_lifetime" not in pkg:
         violations.append("Missing sync automation for HA-persisted zone gallons lifetime")
+    if "nedorachio_persist_weekly_delivered_last" not in pkg:
+        violations.append("Missing persist automation for last-known weekly delivered")
+    if "lifetime >= baseline" not in pkg:
+        violations.append("weekly_delivered must require lifetime >= baseline before publishing")
     fw_engine = REPO_ROOT / "firmware" / "components" / "nedorachio" / "engine.cpp"
     fw_schedule = REPO_ROOT / "firmware" / "components" / "nedorachio" / "schedule.cpp"
     if fw_engine.is_file():
