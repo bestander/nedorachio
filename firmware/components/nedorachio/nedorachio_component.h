@@ -40,6 +40,9 @@ class NedorachioComponent : public esphome::Component {
 
   float get_zone_scheduled_next(int zone_id) const;
   float get_zone_gallons_total(int zone_id) const;
+  float get_zone_weekly_goal_gallons(int zone_id) const;
+  float get_rain_credit_mm_per_step() const;
+  float get_rain_credit_gallons_per_zone_per_step() const;
   int get_last_completed_zone() const;
   float get_last_run_gallons() const;
   uint32_t get_gallons_completion_sequence() const;

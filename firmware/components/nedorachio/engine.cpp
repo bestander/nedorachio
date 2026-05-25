@@ -133,6 +133,18 @@ void IrrigationEngine::set_zone_gallons_total(int zone_id, float gallons) {
   this->zones_[zone_id - 1].gallons_total = std::max(0.0f, gallons);
 }
 
+float IrrigationEngine::zone_weekly_goal_gallons(int zone_id) const {
+  if (zone_id < 1 || zone_id > kNumZones)
+    return 0.0f;
+  return this->config_.zones[zone_id - 1].weekly_goal_gallons;
+}
+
+float IrrigationEngine::rain_credit_mm_per_step() const { return this->config_.global.rain_credit_mm_per_step; }
+
+float IrrigationEngine::rain_credit_gallons_per_zone_per_step() const {
+  return this->config_.global.rain_credit_gallons_per_zone_per_step;
+}
+
 void IrrigationEngine::set_zone_last_finished(int zone_id, uint32_t epoch, uint32_t now_epoch, bool ha_time_valid) {
   if (zone_id < 1 || zone_id > kNumZones)
     return;

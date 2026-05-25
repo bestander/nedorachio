@@ -164,6 +164,24 @@ float NedorachioComponent::get_zone_gallons_total(int zone_id) const {
   return this->engine_->zone_gallons_total(zone_id);
 }
 
+float NedorachioComponent::get_zone_weekly_goal_gallons(int zone_id) const {
+  if (this->engine_ == nullptr)
+    return 0.0f;
+  return this->engine_->zone_weekly_goal_gallons(zone_id);
+}
+
+float NedorachioComponent::get_rain_credit_mm_per_step() const {
+  if (this->engine_ == nullptr)
+    return 0.0f;
+  return this->engine_->rain_credit_mm_per_step();
+}
+
+float NedorachioComponent::get_rain_credit_gallons_per_zone_per_step() const {
+  if (this->engine_ == nullptr)
+    return 0.0f;
+  return this->engine_->rain_credit_gallons_per_zone_per_step();
+}
+
 int NedorachioComponent::get_last_completed_zone() const {
   if (this->engine_ == nullptr)
     return 0;

@@ -65,6 +65,9 @@ class IrrigationEngine {
   uint32_t gallons_completion_sequence() const { return this->gallons_completion_sequence_; }
   float zone_gallons_total(int zone_id) const;
   void set_zone_gallons_total(int zone_id, float gallons);
+  float zone_weekly_goal_gallons(int zone_id) const;
+  float rain_credit_mm_per_step() const;
+  float rain_credit_gallons_per_zone_per_step() const;
  private:
   void drive_zone(int zone_id, bool on, bool stamp_finished);
   void weekly_budget_evaluator(uint32_t now_epoch, bool ha_time_valid);

@@ -148,10 +148,12 @@ def check_ha_weekly_gallons_tracking() -> list[str]:
     for z in range(1, 9):
         if f"nedorachio_zone_{z}_week_baseline_gallons:" not in pkg:
             violations.append(f"Missing input_number.nedorachio_zone_{z}_week_baseline_gallons")
-        if f"nedorachio_zone_{z}_weekly_goal_gallons:" not in pkg:
-            violations.append(f"Missing input_number.nedorachio_zone_{z}_weekly_goal_gallons")
-        if f"number.nedorachio_irrigation_controller_zone_{z}_weekly_goal_gallons" in pkg:
-            violations.append(f"weekly_remaining must not reference missing device number entity for zone {z}")
+        if f"zone_{z}_weekly_goal_gallons_sensor" not in fw:
+            violations.append(f"Firmware missing zone {z} weekly_goal_gallons sensor")
+        if f"input_number.nedorachio_zone_{z}_weekly_goal_gallons:" in pkg:
+            violations.append(f"weekly goals must come from device sensors, not HA input_number for zone {z}")
+        if f"sensor.nedorachio_irrigation_controller_zone_{z}_weekly_goal_gallons" not in pkg:
+            violations.append(f"HA weekly_remaining must reference device weekly goal sensor for zone {z}")
         if f"nedorachio_zone_{z}_weekly_delivered" not in pkg:
             violations.append(f"Missing template sensor nedorachio_zone_{z}_weekly_delivered")
         if f"sensor.nedorachio_zone_{z}_weekly_delivered" not in fw:
@@ -209,6 +211,7 @@ def check_ha_gallons_tracking() -> list[str]:
 
 def check_ha_rain_week_wiring() -> list[str]:
     text = _read(HA_PACKAGE)
+    fw = _read(FIRMWARE_COMPONENT)
     violations: list[str] = []
     if "sensor.openweathermap_rain_intensity" not in text:
         violations.append("HA package must expect sensor.openweathermap_rain_intensity as rain input")
@@ -228,6 +231,8 @@ def check_ha_rain_week_wiring() -> list[str]:
         violations.append("Rain tracking must use calendar week, not 48h rolling")
     if "rain_mm_this_week" not in _read(FIRMWARE_COMPONENT):
         violations.append("Firmware must expose rain_mm_this_week number entity")
+    if "rain_credit_mm_per_step_sensor" not in fw:
+        violations.append("Firmware must expose rain_credit_mm_per_step sensor")
     return violations
 
 

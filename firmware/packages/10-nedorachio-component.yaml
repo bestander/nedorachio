@@ -239,6 +239,77 @@ sensor:
     update_interval: 5s
     lambda: 'return id(irrigation).get_zone_gallons_total(8);'
 
+  - platform: template
+    name: "Zone 1 weekly goal gallons"
+    id: zone_1_weekly_goal_gallons_sensor
+    unit_of_measurement: "gal"
+    accuracy_decimals: 0
+    update_interval: 60s
+    lambda: 'return id(irrigation).get_zone_weekly_goal_gallons(1);'
+  - platform: template
+    name: "Zone 2 weekly goal gallons"
+    id: zone_2_weekly_goal_gallons_sensor
+    unit_of_measurement: "gal"
+    accuracy_decimals: 0
+    update_interval: 60s
+    lambda: 'return id(irrigation).get_zone_weekly_goal_gallons(2);'
+  - platform: template
+    name: "Zone 3 weekly goal gallons"
+    id: zone_3_weekly_goal_gallons_sensor
+    unit_of_measurement: "gal"
+    accuracy_decimals: 0
+    update_interval: 60s
+    lambda: 'return id(irrigation).get_zone_weekly_goal_gallons(3);'
+  - platform: template
+    name: "Zone 4 weekly goal gallons"
+    id: zone_4_weekly_goal_gallons_sensor
+    unit_of_measurement: "gal"
+    accuracy_decimals: 0
+    update_interval: 60s
+    lambda: 'return id(irrigation).get_zone_weekly_goal_gallons(4);'
+  - platform: template
+    name: "Zone 5 weekly goal gallons"
+    id: zone_5_weekly_goal_gallons_sensor
+    unit_of_measurement: "gal"
+    accuracy_decimals: 0
+    update_interval: 60s
+    lambda: 'return id(irrigation).get_zone_weekly_goal_gallons(5);'
+  - platform: template
+    name: "Zone 6 weekly goal gallons"
+    id: zone_6_weekly_goal_gallons_sensor
+    unit_of_measurement: "gal"
+    accuracy_decimals: 0
+    update_interval: 60s
+    lambda: 'return id(irrigation).get_zone_weekly_goal_gallons(6);'
+  - platform: template
+    name: "Zone 7 weekly goal gallons"
+    id: zone_7_weekly_goal_gallons_sensor
+    unit_of_measurement: "gal"
+    accuracy_decimals: 0
+    update_interval: 60s
+    lambda: 'return id(irrigation).get_zone_weekly_goal_gallons(7);'
+  - platform: template
+    name: "Zone 8 weekly goal gallons"
+    id: zone_8_weekly_goal_gallons_sensor
+    unit_of_measurement: "gal"
+    accuracy_decimals: 0
+    update_interval: 60s
+    lambda: 'return id(irrigation).get_zone_weekly_goal_gallons(8);'
+  - platform: template
+    name: "Rain credit mm per step"
+    id: rain_credit_mm_per_step_sensor
+    unit_of_measurement: "mm"
+    accuracy_decimals: 1
+    update_interval: 60s
+    lambda: 'return id(irrigation).get_rain_credit_mm_per_step();'
+  - platform: template
+    name: "Rain credit gallons per zone per step"
+    id: rain_credit_gallons_per_zone_per_step_sensor
+    unit_of_measurement: "gal"
+    accuracy_decimals: 0
+    update_interval: 60s
+    lambda: 'return id(irrigation).get_rain_credit_gallons_per_zone_per_step();'
+
   - platform: homeassistant
     name: "HA zone 1 last watering epoch"
     id: ha_zone_1_last_watering_epoch

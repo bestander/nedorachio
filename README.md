@@ -32,7 +32,8 @@ shadow when HA is unreachable.
 rain sensor still blocks runs while wet.
 
 **Config is flash-only** — edit `firmware/packages/11-config-profile.yaml` and
-reflash. HA `input_number` helpers mirror goals and rain ratio for display only.
+reflash. The dashboard reads weekly goals and rain-credit ratio from device
+sensors (`sensor.nedorachio_irrigation_controller_zone_N_weekly_goal_gallons`).
 
 ---
 
