@@ -1,12 +1,11 @@
 """
-Schedule engine: plan computation, pre-flight, cycle-and-soak, relay execution.
+Schedule engine: weekly gallon budget, pre-flight, relay execution.
 
-This is the canonical implementation previously mirrored in tests/controller/simulator.py.
+Canonical Python implementation mirrored by firmware C++.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Generator, Iterator, Optional, Protocol
 
 from nedorachio.gates import PreflightContext, evaluate_preflight
@@ -19,10 +18,15 @@ from nedorachio.models import (
     ZoneRuntimeState,
 )
 from nedorachio.schedule import (
+    calendar_week_id,
+    effective_rain_mm_this_week,
+    effective_weekly_goal,
     in_watering_window,
     is_blackout_day,
-    next_due_zone,
+    maybe_apply_week_reset,
+    pick_next_zone_round_robin,
     update_scheduled_next_epochs,
+    weekly_delivered_effective,
 )
 
 Tick = None
@@ -69,10 +73,7 @@ class ControllerSimulator:
         self.pressure = pressure
         self.flow = flow
 
-        self.zones: list[ZoneRuntimeState] = [
-            ZoneRuntimeState(last_finished_epoch=config.fallback_start_epoch)
-            for _ in range(8)
-        ]
+        self.zones: list[ZoneRuntimeState] = [ZoneRuntimeState() for _ in range(8)]
         self.run = RunState()
 
         self.currently_on_zone: int = 0
@@ -88,7 +89,10 @@ class ControllerSimulator:
 
         self.skip_next_run_pending: bool = False
         self.due_zone_id: int = 0
-        self.last_non_completed_attempt_epoch: int = 0
+        self.week_id_shadow: int = 0
+        self.last_served_zone_id: int = 0
+        self.tracking_source: str = "local"
+        self.ha_weekly_last_update_epoch: int = 0
         self.schedule_gate_reason: str = "none"
         self.schedule_gate_due_zone: int = 0
         self.last_run_started_epoch: int = 0
@@ -127,9 +131,43 @@ class ControllerSimulator:
     def zone_scheduled_next(self, zone_id: int) -> int:
         return self.zones[zone_id - 1].scheduled_next_epoch
 
-    def next_due_zone(self) -> int:
-        return next_due_zone(
-            self.config, self.zones, self.clock.epoch, ha_time_valid=self.config.time_synced
+    def ha_weekly_feed_valid(self) -> bool:
+        if not self.config.time_synced or not self.config.ha_weekly_feed_valid:
+            return False
+        if self.ha_weekly_last_update_epoch <= 0:
+            return False
+        age = self.clock.epoch - self.ha_weekly_last_update_epoch
+        return age <= self.config.ha_weekly_staleness_seconds
+
+    def on_zone_weekly_delivered(self, zone_id: int, gallons: float) -> None:
+        if zone_id < 1 or zone_id > 8:
+            return
+        zs = self.zones[zone_id - 1]
+        ha_val = max(0.0, gallons)
+        zs.ha_weekly_delivered = ha_val
+        zs.weekly_delivered_shadow = max(zs.weekly_delivered_shadow, ha_val)
+        self.ha_weekly_last_update_epoch = self.clock.epoch
+        self.tracking_source = "ha"
+        self.config.tracking_source = "ha"
+
+    def next_pick_zone(self) -> int:
+        self._apply_week_reset_if_needed()
+        return pick_next_zone_round_robin(
+            self.config,
+            self.zones,
+            self.clock.epoch,
+            ha_feed_valid=self.ha_weekly_feed_valid(),
+            respect_cooldown=True,
+        )
+
+    def next_deficit_zone(self) -> int:
+        self._apply_week_reset_if_needed()
+        return pick_next_zone_round_robin(
+            self.config,
+            self.zones,
+            self.clock.epoch,
+            ha_feed_valid=self.ha_weekly_feed_valid(),
+            respect_cooldown=False,
         )
 
     def is_script_running(self) -> bool:
@@ -152,7 +190,7 @@ class ControllerSimulator:
         self.flow.tick(self.currently_on_zone != 0, now_ms)
         self._run_safety_1s(now_ms)
         self._safety_tick_count += 1
-        self._run_runtime_cap_1s(now_ms)
+        self._run_attempt_cap_1s(now_ms)
 
         if self.currently_on_zone != 0:
             self._ticks_while_zone_on += 1
@@ -161,7 +199,7 @@ class ControllerSimulator:
             self._update_plan_readout()
             self._plan_tick_count += 1
         if self._tick_count % self.EVAL_INTERVAL == 0:
-            self._cadence_evaluator()
+            self._weekly_budget_evaluator()
             self._eval_tick_count += 1
 
         self._step_script()
@@ -185,6 +223,19 @@ class ControllerSimulator:
         }
         if "phantom_flow" not in self.alarms:
             self.any_alarm_latched = False
+
+    def _apply_week_reset_if_needed(self) -> None:
+        if self.clock.epoch <= 0:
+            return
+        current = calendar_week_id(self.clock.epoch, tz=self.clock.tz)
+        new_id = maybe_apply_week_reset(
+            self.zones,
+            week_id_shadow=self.week_id_shadow,
+            current_week_id=current,
+        )
+        if new_id != self.week_id_shadow:
+            self.week_id_shadow = new_id
+            self.last_served_zone_id = 0
 
     def _emit(self, kind: EventType, detail: str = "", zone_id: int = 0) -> None:
         self._events.append(SimEvent(self.clock.epoch, kind, detail, zone_id))
@@ -238,7 +289,6 @@ class ControllerSimulator:
             PreflightContext(
                 now_epoch=self.clock.epoch,
                 rain_sensor_last_wet_epoch=self.rain_sensor_last_wet_epoch,
-                rain_forecast_last_high_epoch=self.rain_forecast_last_high_epoch,
                 any_alarm_latched=self.any_alarm_latched,
                 static_pressure_psi=self.pressure.read(zone_on=False)
                 if self.currently_on_zone == 0 and self.config.gate_static_pressure_preflight
@@ -248,8 +298,6 @@ class ControllerSimulator:
         )
         self.pre_flight_passed = result.passed
         self.pre_flight_reason = result.reason
-        if result.reason == "rain_forecast_high":
-            self.rain_forecast_last_high_epoch = self.clock.epoch
 
         if not self.pre_flight_passed:
             if result.benign:
@@ -259,17 +307,42 @@ class ControllerSimulator:
                 self._signal_alarm("preflight", blocking=False)
         yield Tick
 
-    def _run_one_zone(
-        self, zone_id: int, total_min: float, cycle_min: float, soak_min: float
-    ) -> Generator:
+    def _integrate_run_gallons(self) -> float:
+        ppg = self.flow.pulses_per_gallon
+        run_pulses = max(0, self.flow.pulses_total - self.run.started_pulses)
+        return run_pulses / ppg if ppg > 0 else 0.0
+
+    def _sync_weekly_delivered(self, zone_id: int, gallons_done: float) -> None:
+        zs = self.zones[zone_id - 1]
+        zs.weekly_delivered_shadow = max(zs.weekly_delivered_shadow, gallons_done)
+
+    def _finish_attempt(self, zone_id: int, *, completed: bool) -> None:
+        now = self.clock.epoch
+        zs = self.zones[zone_id - 1]
+        if now > 0:
+            zs.last_attempt_epoch = now
+        if completed and now > 0:
+            zs.last_finished_epoch = now
+
+    def _run_zone_weekly_gallons(self, zone_id: int) -> Generator:
         zcfg = self.config.zone(zone_id)
         zs = self.zones[zone_id - 1]
+        goal = zcfg.weekly_goal_gallons
+        rain_mm = effective_rain_mm_this_week(self.config, now_epoch=self.clock.epoch)
+        run_goal = effective_weekly_goal(
+            goal,
+            rain_mm,
+            mm_per_step=self.config.rain_credit_mm_per_step,
+            gallons_per_step=self.config.rain_credit_gallons_per_zone_per_step,
+        )
+        run_start = weekly_delivered_effective(zs, ha_feed_valid=self.ha_weekly_feed_valid())
+
         self.stamp_cadence_on_zone_off = True
         self.run = RunState(
             zone_id=zone_id,
-            total_min=total_min,
-            cycle_min=cycle_min,
-            soak_min=soak_min,
+            goal_gallons=run_goal,
+            gallons_done=run_start,
+            run_start_delivered=run_start,
             started_pulses=self.flow.pulses_total,
             started_ms=self.clock.boot_ms,
         )
@@ -279,30 +352,20 @@ class ControllerSimulator:
             self.run.cancel_requested = True
             self.run.cancel_cause = "start_pressure_out_of_bounds"
 
-        while self.run.minutes_done < total_min and not self.run.cancel_requested:
-            self.current_phase = "running"
-            self.phase_started_ms = self.clock.boot_ms
-            self.phase_total_ms = int(cycle_min * 60000)
-            self._drive_zone(zone_id, True)
+        self.current_phase = "running"
+        self._drive_zone(zone_id, True)
 
-            self.run.phase_seconds_left = int(cycle_min * 60)
-            while self.run.phase_seconds_left > 0 and not self.run.cancel_requested:
-                yield from self._delay(1)
-                self.run.phase_seconds_left -= 1
-                self.run.minutes_done += 1.0 / 60.0
+        while self.run.gallons_done < run_goal and not self.run.cancel_requested:
+            yield from self._delay(1)
+            session_gal = self._integrate_run_gallons()
+            self.run.gallons_done = run_start + session_gal
+            self._sync_weekly_delivered(zone_id, self.run.gallons_done)
 
-            if self.run.minutes_done < total_min and soak_min > 0 and not self.run.cancel_requested:
-                self.current_phase = "soaking"
-                self.phase_started_ms = self.clock.boot_ms
-                self.phase_total_ms = int(soak_min * 60000)
-                self.stamp_cadence_on_zone_off = False
-                self._drive_zone(zone_id, False)
-                yield from self._delay(int(soak_min * 60))
-
-        self.stamp_cadence_on_zone_off = not self.run.cancel_requested
+        completed = not self.run.cancel_requested and self.run.gallons_done >= run_goal
+        self.stamp_cadence_on_zone_off = completed
         self._drive_zone(zone_id, False)
-        if not self.run.cancel_requested and self.clock.epoch > 0:
-            zs.last_finished_epoch = self.clock.epoch
+        self._finish_attempt(zone_id, completed=completed)
+
         if self.run.cancel_requested:
             self._emit(EventType.RUN_CANCEL, self.run.cancel_cause, zone_id)
         else:
@@ -325,13 +388,7 @@ class ControllerSimulator:
             self.last_run_started_epoch = self.clock.epoch
         self._emit(EventType.SCHEDULE_FIRE, zone_id=zid)
 
-        zcfg = self.config.zone(zid)
-        yield from self._run_one_zone_with_retry(
-            zid, zcfg.total_min, zcfg.cycle_min, zcfg.soak_min
-        )
-
-        if self.run.cancel_requested and self.config.time_synced:
-            self.last_non_completed_attempt_epoch = self.clock.epoch
+        yield from self._run_zone_weekly_gallons(zid)
 
         self.current_phase = "fault" if self.any_alarm_latched else "idle"
         self.phase_total_ms = 0
@@ -344,93 +401,25 @@ class ControllerSimulator:
             self.last_run_outcome = "completed"
         self.due_zone_id = 0
 
-    def _run_one_zone_with_retry(
-        self, zone_id: int, total_min: float, cycle_min: float, soak_min: float
-    ) -> Generator:
-        zcfg = self.config.zone(zone_id)
-        if zcfg.schedule_mode == 1:
-            yield from self._run_one_zone_gallons_target(
-                zone_id, zcfg.goal_gallons, zcfg.cycle_gallons, zcfg.soak_min
-            )
-        else:
-            yield from self._run_one_zone(zone_id, total_min, cycle_min, soak_min)
-
-    def _run_one_zone_gallons_target(
-        self, zone_id: int, goal: float, cycle_gal: float, soak_min: float
-    ) -> Generator:
-        zcfg = self.config.zone(zone_id)
-        zs = self.zones[zone_id - 1]
-        run_base = zs.cycle_delivered_gallons
-        self.stamp_cadence_on_zone_off = True
-        self.run = RunState(
-            zone_id=zone_id,
-            soak_min=soak_min,
-            goal_gallons=goal,
-            cycle_gallons=cycle_gal,
-            gallons_done=run_base,
-            schedule_mode=1,
-            started_pulses=self.flow.pulses_total,
-            started_ms=self.clock.boot_ms,
-        )
-
-        p = self.pressure.read(zone_on=False)
-        if p < zcfg.start_minimum_psi or p > zcfg.start_maximum_psi:
-            self.run.cancel_requested = True
-            self.run.cancel_cause = "start_pressure_out_of_bounds"
-
-        while self.run.gallons_done < goal and not self.run.cancel_requested:
-            self.current_phase = "running"
-            chunk_start = self.flow.pulses_total
-            self._drive_zone(zone_id, True)
-
-            while not self.run.cancel_requested:
-                yield from self._delay(1)
-                ppg = self.flow.pulses_per_gallon
-                run_pulses = max(0, self.flow.pulses_total - self.run.started_pulses)
-                chunk_pulses = max(0, self.flow.pulses_total - chunk_start)
-                run_gal = run_pulses / ppg if ppg > 0 else 0.0
-                chunk_gal = chunk_pulses / ppg if ppg > 0 else 0.0
-                self.run.gallons_done = run_base + run_gal
-                zs.cycle_delivered_gallons = self.run.gallons_done
-                if self.run.gallons_done >= goal:
-                    break
-                remaining = goal - self.run.gallons_done
-                chunk_limit = min(cycle_gal, remaining) if remaining > 0 else 0.0
-                if chunk_gal >= chunk_limit:
-                    break
-
-            self.stamp_cadence_on_zone_off = False
-            self._drive_zone(zone_id, False)
-
-            if self.run.gallons_done < goal and not self.run.cancel_requested and soak_min > 0:
-                self.current_phase = "soaking"
-                yield from self._delay(int(soak_min * 60))
-
-        self.stamp_cadence_on_zone_off = not self.run.cancel_requested
-        self._drive_zone(zone_id, False)
-        zs.cycle_delivered_gallons = (
-            0.0 if self.run.gallons_done >= goal else self.run.gallons_done
-        )
-        if not self.run.cancel_requested and self.run.gallons_done >= goal and self.clock.epoch > 0:
-            zs.last_finished_epoch = self.clock.epoch
-        if self.run.cancel_requested:
-            self._emit(EventType.RUN_CANCEL, self.run.cancel_cause, zone_id)
-        else:
-            self._emit(EventType.RUN_COMPLETE, zone_id=zone_id)
-
     def _update_plan_readout(self) -> None:
         if self.currently_on_zone != 0:
             return
+        self._apply_week_reset_if_needed()
+        feed_valid = self.ha_weekly_feed_valid()
+        if not feed_valid:
+            self.tracking_source = "local"
+            self.config.tracking_source = "local"
         update_scheduled_next_epochs(
             self.config,
             self.zones,
             now_epoch=self.clock.epoch,
             tz=self.clock.tz,
             ha_time_valid=self.config.time_synced,
+            ha_feed_valid=feed_valid,
         )
         self._emit(EventType.PLAN_UPDATED)
 
-    def _cadence_evaluator(self) -> None:
+    def _weekly_budget_evaluator(self) -> None:
         cfg = self.config
         if not cfg.fallback_schedule_enabled:
             self._set_schedule_gate("schedule_disabled")
@@ -447,20 +436,6 @@ class ControllerSimulator:
             self._set_schedule_gate("time_not_synced")
             return
 
-        cooldown_s = int(cfg.attempt_cooldown_minutes * 60)
-        if (
-            cooldown_s > 0
-            and self.last_non_completed_attempt_epoch > 0
-            and now < self.last_non_completed_attempt_epoch + cooldown_s
-        ):
-            self._set_schedule_gate("attempt_cooldown")
-            return
-
-        picked = self.next_due_zone()
-        if picked == 0:
-            self._set_schedule_gate("nothing_due")
-            return
-
         if not in_watering_window(
             hour=self.clock.hour,
             minute=self.clock.minute,
@@ -469,13 +444,18 @@ class ControllerSimulator:
             end_hour=cfg.schedule_end_hour,
             end_minute=cfg.schedule_end_minute,
         ):
-            self._set_schedule_gate("outside_watering_window", picked)
+            self._set_schedule_gate("outside_watering_window")
             return
         if is_blackout_day(
             dow_mon0=self.clock.dow_mon0,
             blackout_weekday_bitmask=cfg.blackout_weekday_bitmask,
         ):
-            self._set_schedule_gate("blackout_day", picked)
+            self._set_schedule_gate("blackout_day")
+            return
+
+        picked = self.next_pick_zone()
+        if picked == 0:
+            self._set_schedule_gate("nothing_eligible")
             return
 
         if self.skip_next_run_pending:
@@ -484,6 +464,8 @@ class ControllerSimulator:
             return
 
         self._set_schedule_gate("none", picked)
+        self.last_served_zone_id = picked
+        self.config.last_served_zone_id = picked
         self.due_zone_id = picked
         self._start_script("schedule_fire_handler", self._schedule_fire_handler())
 
@@ -570,12 +552,13 @@ class ControllerSimulator:
             self.run.cancel_requested = True
             self.run.cancel_cause = "rain"
 
-    def _run_runtime_cap_1s(self, now_ms: int) -> None:
+    def _run_attempt_cap_1s(self, now_ms: int) -> None:
         if self.currently_on_zone == 0:
             return
         elapsed_ms = now_ms - self.zone_started_at_ms
-        cap_ms = int(self.config.maximum_runtime_minutes * 60 * 1000)
-        if elapsed_ms > cap_ms:
+        cap_ms = int(self.config.max_attempt_minutes * 60 * 1000)
+        if elapsed_ms >= cap_ms:
             zid = self.currently_on_zone
-            self._drive_zone(zid, False)
+            self.run.cancel_requested = True
+            self.run.cancel_cause = "attempt_cap"
             self._signal_alarm("runtime_exceeded")

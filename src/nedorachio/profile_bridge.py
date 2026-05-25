@@ -36,20 +36,15 @@ def operational_config_from_profile(profile: ConfigProfile, **overrides) -> Oper
             continue
         if zp.enabled:
             zone_mask |= 1 << (zid - 1)
-        mode = 1 if zp.mode == "gallons_target" else 0
         zones.append(
             OperationalZoneConfig(
-                soak_min=zp.soak_minutes,
-                min_interval_hours=zp.minimum_interval_hours,
+                weekly_goal_gallons=zp.weekly_goal_gallons,
                 min_flow_gpm=zp.minimum_flow_gpm,
                 max_flow_gpm=zp.maximum_flow_gpm,
                 start_minimum_psi=zp.start_minimum_psi,
                 start_maximum_psi=zp.start_maximum_psi,
                 minimum_running_psi=zp.minimum_running_psi,
                 minimum_running_psi_grace_seconds=int(zp.minimum_running_psi_grace_seconds),
-                schedule_mode=mode,
-                goal_gallons=zp.goal_gallons_per_cycle,
-                cycle_gallons=zp.cycle_gallons,
             )
         )
 
@@ -62,11 +57,12 @@ def operational_config_from_profile(profile: ConfigProfile, **overrides) -> Oper
         schedule_end_minute=end_m,
         blackout_weekday_bitmask=weekday_bitmask(g.blackout_weekdays),
         attempt_cooldown_minutes=g.attempt_cooldown_minutes,
-        maximum_runtime_minutes=g.maximum_runtime_minutes,
+        max_attempt_minutes=g.max_attempt_minutes,
         no_flow_grace_s=g.no_flow_grace_seconds,
         no_flow_sustain_s=g.no_flow_sustain_seconds,
-        rain_mm_threshold_48h=g.rain_accumulation_threshold_mm_48h,
-        rain_hold_hours_after_forecast=g.rain_accumulation_hold_hours_after_threshold,
+        rain_credit_mm_per_step=g.rain_credit_mm_per_step,
+        rain_credit_gallons_per_zone_per_step=g.rain_credit_gallons_per_zone_per_step,
+        rain_sensor_hold_hours_after_wet=g.rain_sensor_hold_hours_after_wet,
     )
     for key, value in overrides.items():
         if hasattr(cfg, key):
@@ -76,31 +72,37 @@ def operational_config_from_profile(profile: ConfigProfile, **overrides) -> Oper
 
 def apply_runtime_state_to_controller(sim, state: RuntimeState) -> None:
     """Load HA-persisted JSON into a running controller simulator."""
+    sim.week_id_shadow = state.week_id_shadow
+    sim.last_served_zone_id = state.last_served_zone_id
     for zid, rec in state.zones.items():
         if 1 <= zid <= 8:
             zs = sim.zones[zid - 1]
             if rec.last_finished_epoch > 0:
                 zs.last_finished_epoch = rec.last_finished_epoch
-            zs.cycle_delivered_gallons = rec.cycle_delivered_gallons
+            zs.weekly_delivered_shadow = rec.weekly_delivered_shadow
+            zs.last_attempt_epoch = rec.last_attempt_epoch
     sim.rain_sensor_last_wet_epoch = state.rain_sensor_last_wet_epoch
     sim.rain_forecast_last_high_epoch = state.rain_forecast_last_high_epoch
-    sim.last_non_completed_attempt_epoch = state.last_non_completed_attempt_epoch
 
 
 def runtime_state_from_controller(sim, *, now_epoch: int) -> RuntimeState:
-    """Snapshot controller cadence fields for HA persistence."""
+    """Snapshot controller weekly fields for HA persistence."""
     from nedorachio.runtime_state import RuntimeState, ZoneRuntimeRecord
 
-    state = RuntimeState(updated_epoch=now_epoch)
+    state = RuntimeState(
+        updated_epoch=now_epoch,
+        week_id_shadow=sim.week_id_shadow,
+        last_served_zone_id=sim.last_served_zone_id,
+    )
     for zid in range(1, 9):
         zs = sim.zones[zid - 1]
         state.zones[zid] = ZoneRuntimeRecord(
             last_finished_epoch=zs.last_finished_epoch,
-            cycle_delivered_gallons=zs.cycle_delivered_gallons,
+            weekly_delivered_shadow=zs.weekly_delivered_shadow,
+            last_attempt_epoch=zs.last_attempt_epoch,
         )
     state.rain_sensor_last_wet_epoch = sim.rain_sensor_last_wet_epoch
     state.rain_forecast_last_high_epoch = sim.rain_forecast_last_high_epoch
-    state.last_non_completed_attempt_epoch = sim.last_non_completed_attempt_epoch
     return state
 
 

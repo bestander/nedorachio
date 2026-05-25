@@ -5,6 +5,8 @@
 
 #include <Arduino.h>
 
+#include <cmath>
+
 namespace esphome {
 namespace nedorachio {
 
@@ -81,13 +83,24 @@ void NedorachioComponent::apply_config_profile_() {
     this->engine_->apply_config(cfg);
     this->engine_->refresh_schedule_plan(this->now_epoch_(), this->ha_time_valid_());
     ESP_LOGI(TAG,
-             "Config profile loaded (%u bytes) zones=0x%02x z1_interval=%.0fh z1_next=%u window=%02d:%02d-%02d:%02d",
-             (unsigned) this->config_profile_.size(), cfg.zones_enabled_bitmask, cfg.zones[0].min_interval_hours,
+             "Config profile loaded (%u bytes) zones=0x%02x z1_goal=%.0fg z1_next=%u window=%02d:%02d-%02d:%02d "
+             "max_attempt=%.0fm",
+             (unsigned) this->config_profile_.size(), cfg.zones_enabled_bitmask, cfg.zones[0].weekly_goal_gallons,
              this->engine_->zone_scheduled_next(1), cfg.global.schedule_start_hour, cfg.global.schedule_start_minute,
-             cfg.global.schedule_end_hour, cfg.global.schedule_end_minute);
+             cfg.global.schedule_end_hour, cfg.global.schedule_end_minute, cfg.global.max_attempt_minutes);
   } else {
     ESP_LOGW(TAG, "Failed to parse config_profile JSON (%u bytes)", (unsigned) this->config_profile_.size());
   }
+}
+
+void NedorachioComponent::on_zone_weekly_delivered(int zone_id, float gallons) {
+  if (this->engine_ == nullptr || zone_id < 1 || zone_id > kNumZones)
+    return;
+  if (std::isnan(gallons))
+    return;
+  const uint32_t now = this->now_epoch_();
+  this->engine_->on_zone_weekly_delivered(zone_id, gallons, now);
+  ESP_LOGI(TAG, "HA zone %d weekly_delivered=%.2f epoch_now=%u", zone_id, gallons, now);
 }
 
 void NedorachioComponent::on_zone_last_watering(int zone_id, uint32_t epoch) {

@@ -244,6 +244,8 @@ sensor:
     id: ha_zone_1_last_watering_epoch
     entity_id: sensor.nedorachio_zone_1_last_watering_epoch
     internal: true
+    filters:
+      - filter_out: nan
     on_value:
       - lambda: 'id(irrigation).on_zone_last_watering(1, (uint32_t) x);'
   - platform: homeassistant
@@ -251,6 +253,8 @@ sensor:
     id: ha_zone_2_last_watering_epoch
     entity_id: sensor.nedorachio_zone_2_last_watering_epoch
     internal: true
+    filters:
+      - filter_out: nan
     on_value:
       - lambda: 'id(irrigation).on_zone_last_watering(2, (uint32_t) x);'
   - platform: homeassistant
@@ -258,6 +262,8 @@ sensor:
     id: ha_zone_3_last_watering_epoch
     entity_id: sensor.nedorachio_zone_3_last_watering_epoch
     internal: true
+    filters:
+      - filter_out: nan
     on_value:
       - lambda: 'id(irrigation).on_zone_last_watering(3, (uint32_t) x);'
   - platform: homeassistant
@@ -265,6 +271,8 @@ sensor:
     id: ha_zone_4_last_watering_epoch
     entity_id: sensor.nedorachio_zone_4_last_watering_epoch
     internal: true
+    filters:
+      - filter_out: nan
     on_value:
       - lambda: 'id(irrigation).on_zone_last_watering(4, (uint32_t) x);'
   - platform: homeassistant
@@ -272,6 +280,8 @@ sensor:
     id: ha_zone_5_last_watering_epoch
     entity_id: sensor.nedorachio_zone_5_last_watering_epoch
     internal: true
+    filters:
+      - filter_out: nan
     on_value:
       - lambda: 'id(irrigation).on_zone_last_watering(5, (uint32_t) x);'
   - platform: homeassistant
@@ -279,6 +289,8 @@ sensor:
     id: ha_zone_6_last_watering_epoch
     entity_id: sensor.nedorachio_zone_6_last_watering_epoch
     internal: true
+    filters:
+      - filter_out: nan
     on_value:
       - lambda: 'id(irrigation).on_zone_last_watering(6, (uint32_t) x);'
   - platform: homeassistant
@@ -286,6 +298,8 @@ sensor:
     id: ha_zone_7_last_watering_epoch
     entity_id: sensor.nedorachio_zone_7_last_watering_epoch
     internal: true
+    filters:
+      - filter_out: nan
     on_value:
       - lambda: 'id(irrigation).on_zone_last_watering(7, (uint32_t) x);'
   - platform: homeassistant
@@ -293,8 +307,83 @@ sensor:
     id: ha_zone_8_last_watering_epoch
     entity_id: sensor.nedorachio_zone_8_last_watering_epoch
     internal: true
+    filters:
+      - filter_out: nan
     on_value:
       - lambda: 'id(irrigation).on_zone_last_watering(8, (uint32_t) x);'
+
+  - platform: homeassistant
+    name: "HA zone 1 weekly delivered"
+    id: ha_zone_1_weekly_delivered
+    entity_id: sensor.nedorachio_zone_1_weekly_delivered
+    internal: true
+    filters:
+      - filter_out: nan
+    on_value:
+      - lambda: 'id(irrigation).on_zone_weekly_delivered(1, (float) x);'
+  - platform: homeassistant
+    name: "HA zone 2 weekly delivered"
+    id: ha_zone_2_weekly_delivered
+    entity_id: sensor.nedorachio_zone_2_weekly_delivered
+    internal: true
+    filters:
+      - filter_out: nan
+    on_value:
+      - lambda: 'id(irrigation).on_zone_weekly_delivered(2, (float) x);'
+  - platform: homeassistant
+    name: "HA zone 3 weekly delivered"
+    id: ha_zone_3_weekly_delivered
+    entity_id: sensor.nedorachio_zone_3_weekly_delivered
+    internal: true
+    filters:
+      - filter_out: nan
+    on_value:
+      - lambda: 'id(irrigation).on_zone_weekly_delivered(3, (float) x);'
+  - platform: homeassistant
+    name: "HA zone 4 weekly delivered"
+    id: ha_zone_4_weekly_delivered
+    entity_id: sensor.nedorachio_zone_4_weekly_delivered
+    internal: true
+    filters:
+      - filter_out: nan
+    on_value:
+      - lambda: 'id(irrigation).on_zone_weekly_delivered(4, (float) x);'
+  - platform: homeassistant
+    name: "HA zone 5 weekly delivered"
+    id: ha_zone_5_weekly_delivered
+    entity_id: sensor.nedorachio_zone_5_weekly_delivered
+    internal: true
+    filters:
+      - filter_out: nan
+    on_value:
+      - lambda: 'id(irrigation).on_zone_weekly_delivered(5, (float) x);'
+  - platform: homeassistant
+    name: "HA zone 6 weekly delivered"
+    id: ha_zone_6_weekly_delivered
+    entity_id: sensor.nedorachio_zone_6_weekly_delivered
+    internal: true
+    filters:
+      - filter_out: nan
+    on_value:
+      - lambda: 'id(irrigation).on_zone_weekly_delivered(6, (float) x);'
+  - platform: homeassistant
+    name: "HA zone 7 weekly delivered"
+    id: ha_zone_7_weekly_delivered
+    entity_id: sensor.nedorachio_zone_7_weekly_delivered
+    internal: true
+    filters:
+      - filter_out: nan
+    on_value:
+      - lambda: 'id(irrigation).on_zone_weekly_delivered(7, (float) x);'
+  - platform: homeassistant
+    name: "HA zone 8 weekly delivered"
+    id: ha_zone_8_weekly_delivered
+    entity_id: sensor.nedorachio_zone_8_weekly_delivered
+    internal: true
+    filters:
+      - filter_out: nan
+    on_value:
+      - lambda: 'id(irrigation).on_zone_weekly_delivered(8, (float) x);'
 
 text:
   - platform: template
@@ -499,8 +588,8 @@ switch:
 
 number:
   - platform: template
-    name: "Rain mm last 48h"
-    id: rain_mm_last_48h
+    name: "Rain mm this week"
+    id: rain_mm_this_week
     optimistic: true
     initial_value: "0"
     min_value: 0
@@ -509,7 +598,7 @@ number:
     unit_of_measurement: "mm"
     set_action:
       - lambda: |-
-          id(irrigation).set_rain_mm_last_48h(x, id(irrigation).now_epoch_for_rain());
+          id(irrigation).set_rain_mm_this_week(x, id(irrigation).now_epoch_for_rain());
 
 nedorachio:
   id: irrigation

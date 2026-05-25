@@ -14,6 +14,8 @@ HA_DASHBOARD = REPO_ROOT / "homeassistant" / "packages" / "nedorachio-dashboard.
 FIRMWARE_COMPONENT = REPO_ROOT / "firmware" / "packages" / "10-nedorachio-component.yaml"
 FIRMWARE_COMPONENT_CPP = REPO_ROOT / "firmware" / "components" / "nedorachio" / "nedorachio_component.cpp"
 FIRMWARE_CONFIG = REPO_ROOT / "firmware" / "packages" / "11-config-profile.yaml"
+# Dashboard shows only physically wired zones (package/firmware still define all 8).
+DASHBOARD_ZONES = range(1, 5)
 
 
 def _read(path: Path) -> str:
@@ -82,11 +84,14 @@ def check_firmware_config_profile_present() -> list[str]:
     except (ValueError, json.JSONDecodeError) as exc:
         violations.append(f"Invalid config_profile JSON: {exc}")
         return violations
-    if profile.get("version") != 1:
-        violations.append("config_profile version must be 1")
+    if profile.get("version") != 2:
+        violations.append("config_profile version must be 2")
     zones = profile.get("zones")
     if not isinstance(zones, dict) or "1" not in zones:
         violations.append("config_profile must include zones.1")
+    g = profile.get("global", {})
+    if "rain_credit_mm_per_step" not in g:
+        violations.append("config_profile must define rain_credit_mm_per_step")
     return violations
 
 
@@ -135,6 +140,32 @@ def check_ha_dashboard_master_schedule() -> list[str]:
     return violations
 
 
+def check_ha_weekly_gallons_tracking() -> list[str]:
+    pkg = _read(HA_PACKAGE)
+    dash = _read(HA_DASHBOARD)
+    fw = _read(FIRMWARE_COMPONENT)
+    violations: list[str] = []
+    for z in range(1, 9):
+        if f"nedorachio_zone_{z}_week_baseline_gallons:" not in pkg:
+            violations.append(f"Missing input_number.nedorachio_zone_{z}_week_baseline_gallons")
+        if f"nedorachio_zone_{z}_weekly_goal_gallons:" not in pkg:
+            violations.append(f"Missing input_number.nedorachio_zone_{z}_weekly_goal_gallons")
+        if f"number.nedorachio_irrigation_controller_zone_{z}_weekly_goal_gallons" in pkg:
+            violations.append(f"weekly_remaining must not reference missing device number entity for zone {z}")
+        if f"nedorachio_zone_{z}_weekly_delivered" not in pkg:
+            violations.append(f"Missing template sensor nedorachio_zone_{z}_weekly_delivered")
+        if f"sensor.nedorachio_zone_{z}_weekly_delivered" not in fw:
+            violations.append(f"Firmware missing homeassistant sensor for zone {z} weekly_delivered")
+        if f"on_zone_weekly_delivered({z}," not in fw:
+            violations.append(f"Firmware missing on_zone_weekly_delivered handler for zone {z}")
+    for z in DASHBOARD_ZONES:
+        if f"sensor.nedorachio_zone_{z}_weekly_remaining" not in dash:
+            violations.append(f"Dashboard must reference sensor.nedorachio_zone_{z}_weekly_remaining")
+    if "nedorachio_weekly_baseline_reset" not in pkg:
+        violations.append("Missing Monday weekly baseline reset automation")
+    return violations
+
+
 def check_ha_gallons_tracking() -> list[str]:
     pkg = _read(HA_PACKAGE)
     dash = _read(HA_DASHBOARD)
@@ -150,16 +181,13 @@ def check_ha_gallons_tracking() -> list[str]:
             violations.append(f"Missing 7-day display template sensor nedorachio_zone_{z}_gallons_7d")
         if f"nedorachio_zone_{z}_gallons_7d_rolling_v1" not in pkg:
             violations.append(f"Missing 7-day statistics sensor nedorachio_zone_{z}_gallons_7d_rolling")
-        if f"sensor.nedorachio_zone_{z}_gallons_last_7_days" not in dash:
-            violations.append(f"Dashboard must reference sensor.nedorachio_zone_{z}_gallons_last_7_days")
         if f"zone_{z}_gallons_total_sensor" not in fw:
             violations.append(f"Firmware missing zone {z} gallons total sensor")
-    if "input_number:" in pkg and "gallons_lifetime" in pkg:
-        violations.append("Gallons totals must come from device sensors, not HA input_number counters")
+    for z in DASHBOARD_ZONES:
+        if f"sensor.nedorachio_zone_{z}_gallons_last_7_days" not in dash:
+            violations.append(f"Dashboard must reference sensor.nedorachio_zone_{z}_gallons_last_7_days")
     if "nedorachio_record_gallons_delivery" in pkg:
         violations.append("Gallons must not use HA delivery-event accumulation automations")
-    if "nedorachio_reset_weekly_gallons" in pkg:
-        violations.append("Use rolling 7-day statistics sensors instead of weekly reset counters")
     if "utility_meter:" in pkg:
         violations.append("Use statistics sensors for rolling 7-day gallons, not utility_meter")
     if "platform: statistics" not in pkg:
@@ -172,35 +200,34 @@ def check_ha_gallons_tracking() -> list[str]:
         violations.append("Dashboard must include 7-day gallons statistics-graph")
     if "Gallons last 7 days (rolling)" not in dash:
         violations.append("Dashboard must show rolling 7-day gallons totals")
+    if "Weekly progress" not in dash:
+        violations.append("Dashboard must show weekly progress section")
     if "state_class: total_increasing" not in fw or "Zone 1 gallons total" not in fw:
         violations.append("Firmware zone gallons sensors must use state_class total_increasing")
-    if "last_gallons_delivery_text" in fw:
-        violations.append("Firmware must not expose delivery-event text for HA-side accumulation")
-    if "ha_pub_z1_gallons" in fw:
-        violations.append("Gallons tracking must use device sensors, not ESP->HA input_number publish")
-    if "device_class: water" in pkg:
-        violations.append("Gallon template sensors must not use device_class water (HA converts to L)")
-    cpp = _read(FIRMWARE_COMPONENT_CPP)
-    if "zone_gallons_pref_" not in cpp:
-        violations.append("Firmware must persist zone gallons totals across restarts")
     return violations
 
 
-def check_ha_rain_hold_wiring() -> list[str]:
+def check_ha_rain_week_wiring() -> list[str]:
     text = _read(HA_PACKAGE)
     violations: list[str] = []
     if "sensor.openweathermap_rain_intensity" not in text:
         violations.append("HA package must expect sensor.openweathermap_rain_intensity as rain input")
     if "nedorachio_rain_intensity_input_v1" not in text:
         violations.append("Missing template sensor nedorachio_rain_intensity_input")
-    if "nedorachio_rain_observed_48h_rolling_v1" not in text:
-        violations.append("Missing statistics sensor nedorachio_rain_observed_48h_rolling")
-    if "nedorachio_rain_observed_48h_v1" not in text:
-        violations.append("Missing template sensor nedorachio_rain_observed_48h")
-    if "sensor.rain_observed_48h" in text:
-        violations.append("Use package-owned sensor.nedorachio_rain_observed_48h, not external sensor.rain_observed_48h")
-    if "sensor.nedorachio_rain_observed_48h" not in text:
-        violations.append("Weather feeder must read sensor.nedorachio_rain_observed_48h")
+    if "nedorachio_rain_observed_week_v1" not in text:
+        violations.append("Missing template sensor nedorachio_rain_observed_week")
+    if "nedorachio_rain_credit_gallons_per_zone_v1" not in text:
+        violations.append("Missing template sensor nedorachio_rain_credit_gallons_per_zone")
+    if "nedorachio_rain_lifetime_mm:" not in text:
+        violations.append("Missing input_number.nedorachio_rain_lifetime_mm")
+    if "nedorachio_rain_week_baseline_mm:" not in text:
+        violations.append("Missing input_number.nedorachio_rain_week_baseline_mm")
+    if "sensor.nedorachio_rain_observed_week" not in text:
+        violations.append("Weather feeder must read sensor.nedorachio_rain_observed_week")
+    if "rain_mm_last_48h" in text or "rain_observed_48h" in text:
+        violations.append("Rain tracking must use calendar week, not 48h rolling")
+    if "rain_mm_this_week" not in _read(FIRMWARE_COMPONENT):
+        violations.append("Firmware must expose rain_mm_this_week number entity")
     return violations
 
 
@@ -214,8 +241,9 @@ def all_ha_integration_violations() -> list[str]:
         check_nedorachio_yaml_includes_config_package,
         check_ha_dashboard_no_config_sync,
         check_ha_dashboard_master_schedule,
+        check_ha_weekly_gallons_tracking,
         check_ha_gallons_tracking,
-        check_ha_rain_hold_wiring,
+        check_ha_rain_week_wiring,
     ]
     violations: list[str] = []
     for check in checks:

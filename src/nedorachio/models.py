@@ -14,10 +14,11 @@ class WateringWindow:
 @dataclass(frozen=True)
 class GlobalConfig:
     watering_window: WateringWindow
-    rain_accumulation_threshold_mm_48h: float
-    rain_accumulation_hold_hours_after_threshold: float
+    rain_credit_mm_per_step: float
+    rain_credit_gallons_per_zone_per_step: float
+    rain_sensor_hold_hours_after_wet: float
     attempt_cooldown_minutes: float
-    maximum_runtime_minutes: float
+    max_attempt_minutes: float
     no_flow_grace_seconds: float
     no_flow_sustain_seconds: float
     blackout_weekdays: tuple[str, ...]
@@ -27,11 +28,7 @@ class GlobalConfig:
 class ZoneConfigProfile:
     zone_id: int
     enabled: bool
-    mode: str
-    goal_gallons_per_cycle: float
-    cycle_gallons: float
-    soak_minutes: float
-    minimum_interval_hours: float
+    weekly_goal_gallons: float
     start_minimum_psi: float
     start_maximum_psi: float
     minimum_running_psi: float
@@ -50,10 +47,11 @@ class ConfigProfile:
 @dataclass(frozen=True)
 class ZonePlan:
     zone_id: int
-    next_start_epoch: int | None
+    next_eligible_epoch: int | None
     blocked_reason: str | None
-    cycle_delivered_gallons: float
-    cycle_remaining_gallons: float
+    weekly_delivered_gallons: float
+    weekly_remaining_gallons: float
+    weekly_goal_met: bool
     last_finished_epoch: int
 
 
@@ -103,26 +101,22 @@ class BackgroundActivity:
 
 @dataclass
 class ZoneRuntimeState:
-    last_finished_epoch: int
+    last_finished_epoch: int = 0
     scheduled_next_epoch: int = 0
     actual_state: bool = False
-    cycle_delivered_gallons: float = 0.0
+    weekly_delivered_shadow: float = 0.0
+    ha_weekly_delivered: float = 0.0
+    last_attempt_epoch: int = 0
 
 
 @dataclass
 class RunState:
     zone_id: int = 0
-    total_min: float = 0.0
-    cycle_min: float = 0.0
-    soak_min: float = 0.0
-    minutes_done: float = 0.0
     goal_gallons: float = 0.0
-    cycle_gallons: float = 0.0
     gallons_done: float = 0.0
-    schedule_mode: int = 0
+    run_start_delivered: float = 0.0
     cancel_requested: bool = False
     cancel_cause: str = ""
-    phase_seconds_left: int = 0
     started_pulses: int = 0
     started_ms: int = 0
 
@@ -130,7 +124,8 @@ class RunState:
 @dataclass
 class ZoneRuntime:
     last_finished_epoch: int = 0
-    cycle_delivered_gallons: float = 0.0
+    weekly_delivered_shadow: float = 0.0
+    last_attempt_epoch: int = 0
 
 
 @dataclass
@@ -142,22 +137,17 @@ class PreflightResult:
 
 @dataclass
 class OperationalZoneConfig:
-    total_min: float = 20.0
-    cycle_min: float = 10.0
-    soak_min: float = 15.0
-    min_interval_hours: float = 48.0
+    weekly_goal_gallons: float = 0.0
     min_flow_gpm: float = 1.0
     max_flow_gpm: float = 20.0
     start_minimum_psi: float = 35.0
     start_maximum_psi: float = 85.0
     minimum_running_psi: float = 20.0
     minimum_running_psi_grace_seconds: int = 5
-    schedule_mode: int = 0
-    goal_gallons: float = 0.0
-    cycle_gallons: float = 0.0
 
 
 FALLBACK_START_EPOCH = 1780329600  # 2026-06-01 11:00 EST
+HA_WEEKLY_STALENESS_SECONDS = 900
 
 
 @dataclass
@@ -178,9 +168,15 @@ class OperationalConfig:
     schedule_end_hour: int = 8
     schedule_end_minute: int = 0
     blackout_weekday_bitmask: int = 0
-    maximum_runtime_minutes: float = 60.0
+    max_attempt_minutes: float = 30.0
     attempt_cooldown_minutes: float = 20.0
     inter_zone_delay_s: float = 2.0
+
+    week_id_shadow: int = 0
+    last_served_zone_id: int = 0
+    tracking_source: str = "local"
+    ha_weekly_feed_valid: bool = False
+    ha_weekly_staleness_seconds: int = HA_WEEKLY_STALENESS_SECONDS
 
     pressure_static_min_psi: float = 30.0
     pressure_static_max_psi: float = 80.0
@@ -203,11 +199,11 @@ class OperationalConfig:
     high_pressure_cancels_run: bool = False
 
     rain_sensor_wet: bool = False
-    rain_mm_last_48h: float = 0.0
+    rain_mm_this_week: float = 0.0
     rain_mm_last_pushed_epoch: int = 0
-    rain_mm_threshold_48h: float = 6.0
-    rain_hold_hours_after_sensor: float = 24.0
-    rain_hold_hours_after_forecast: float = 24.0
+    rain_credit_mm_per_step: float = 10.0
+    rain_credit_gallons_per_zone_per_step: float = 100.0
+    rain_sensor_hold_hours_after_wet: float = 24.0
     rain_mm_max_age_hours: float = 12.0
 
     fallback_start_epoch: int = FALLBACK_START_EPOCH

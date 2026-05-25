@@ -1,393 +1,181 @@
 # Nedorachio
 
-Home-Assistant-controlled irrigation controller built on an 8-relay
-ESP32-WROOM-32E development board running ESPHome. Replaces a Rachio.
+ESP32-WROOM-32E irrigation controller (ESPHome) replacing a Rachio. Eight relay
+outputs, flow meter, pressure transducer, and rain sensor.
 
-All irrigation logic — per-zone cadence scheduler, cycle-and-soak, pre-flight
-gates, mid-run cancels, cooldown-paced re-attempts, rain hold, stats — lives on the device. Home
-Assistant is a thin layer that pushes weather data, surfaces state, and routes
-notifications.
+**Scheduling runs on the device.** Home Assistant tracks calendar-week progress,
+feeds weather rain, stores last-watering times, and shows the dashboard.
 
-> **Note.** The original design doc in
-> `docs/superpowers/specs/2026-04-30-nedorachio-irrigation-controller-design.md`
-> describes a weekly day-of-week schedule with catch-up. That has been replaced
-> by the per-zone cadence model documented below; treat the spec/plan docs as
-> historical context for the engine and safety layer, not the scheduler.
+Design spec: `docs/superpowers/specs/2026-05-25-weekly-gallons-scheduler-design.md`
+
+---
+
+## How it works
+
+Each enabled zone has a **weekly gallon goal**. During the configured watering
+window, the controller round-robins among zones that still need water, capping
+each attempt at `max_attempt_minutes` and applying a per-zone cooldown after
+every attempt.
+
+**Weekly progress (HA-primary):**
+
+```
+weekly_delivered = zone_gallons_lifetime − week_baseline_gallons
+```
+
+Baselines reset every **Monday 00:00** (configured timezone). The ESP reads
+`sensor.nedorachio_zone_N_weekly_delivered` when online and keeps a local NVS
+shadow when HA is unreachable.
+
+**Rain credit:** observed rain this week reduces each zone's effective target
+(linear ratio, globally configurable — default **10 mm → 100 gal**). The physical
+rain sensor still blocks runs while wet.
+
+**Config is flash-only** — edit `firmware/packages/11-config-profile.yaml` and
+reflash. HA `input_number` helpers mirror goals and rain ratio for display only.
 
 ---
 
 ## Hardware
 
-Enclosure CAD model: [Onshape enclosure model](https://cad.onshape.com/documents/9c8fb8a497eae65202519f86/w/afbdc8fc01fccc1892897bd4/e/039000a7d5b9f349569a7599?renderMode=0&uiState=6a022ed0ac288eec0668bda4)
+Enclosure CAD: [Onshape model](https://cad.onshape.com/documents/9c8fb8a497eae65202519f86/w/afbdc8fc01fccc1892897bd4/e/039000a7d5b9f349569a7599?renderMode=0&uiState=6a022ed0ac288eec0668bda4)
 
-### Bill of materials
+| Item | Notes |
+|------|-------|
+| 8-ch ESP32 relay board | Amazon B0DK6QKNBM |
+| 24VAC transformer | From existing Rachio install |
+| Hunter Mini-Clik | NC rain sensor |
+| EveryDrop 1004-EX | Pulse flow meter |
+| 0–100 PSI transducer | 0–5 V, 12 V powered |
 
-- 8-channel ESP32-WROOM-32E relay/dev board (Amazon ASIN B0DK6QKNBM).
-- Existing 24VAC sprinkler valve transformer (carried over from the Rachio).
-- Hunter Mini-Clik (or equivalent normally-closed) rain sensor.
-- EveryDropMeter Model 1004-EX flow meter (2-wire pulse + power interface).
-- 0-100 PSI 0-5V pressure transducer (powered from shared 12V rail).
-- Perfboard front-end parts:
-  - Flow input network: 4N35, 1kΩ (Rpullup), 2.2kΩ (Rled), 10kΩ.
-    - Note: EveryDrop's electrical spec recommends <= 1.8k source impedance at
-      12V (1k preferred). This build uses 1k for Rpullup.
-  - Pressure ADC divider: 10kΩ, 20kΩ (optional 100nF filter cap).
+GPIO assignments are in `firmware/packages/10-nedorachio-component.yaml` — verify
+against your board before switching live valves.
 
-### GPIO map
+| Function | GPIO |
+|----------|------|
+| Relays 1–8 | 32, 33, 25, 26, 27, 14, 12, 13 |
+| Rain sensor | 18 (pull-up) |
+| Flow pulse | 19 (10k pull-up to 3.3 V) |
+| Pressure ADC | 34 |
 
-The current firmware uses **placeholder** GPIO assignments. Verify with the
-real board before flashing onto a system that's switching valves, then update
-both the table below and the matching `pin:` lines in
-`firmware/packages/10-nedorachio-component.yaml`.
+Flow uses field-calibrated `pulses_per_gallon` (default 344.4) in the C++
+component. Pressure linear calibration is in the ESPHome sensor filters.
 
-| Function           | GPIO | Notes |
-|--------------------|------|-------|
-| Relay 1 (zone 1)   | GPIO32 | active-high |
-| Relay 2 (zone 2)   | GPIO33 | active-high |
-| Relay 3 (zone 3)   | GPIO25 | active-high |
-| Relay 4 (zone 4)   | GPIO26 | active-high |
-| Relay 5 (zone 5)   | GPIO27 | active-high |
-| Relay 6 (zone 6)   | GPIO14 | active-high |
-| Relay 7 (zone 7)   | GPIO12 | strapping pin — use with care |
-| Relay 8 (zone 8)   | GPIO13 | active-high |
-| Rain sensor input  | GPIO18 | internal pull-up |
-| Flow meter pulse   | GPIO19 | external 10k pull-up to 3.3V |
-| Pressure ADC       | GPIO34 | ADC1, 12 dB attenuation |
-
-### Calibration
-
-Pressure transducer linear calibration is set in
-`firmware/packages/10-nedorachio-component.yaml` under the pressure sensor
-`calibrate_linear:` filter (restored from the pre-C++ `03-sensors.yaml`).
-
-Flow rate and total gallons are derived from pulse totals using calibrated
-`pulses_per_gallon`.
-
-Why not use the meter's nominal K/offset equation directly in firmware?
-In this build, the meter signal is conditioned through a 4N35 isolation stage
-and GPIO edge filtering. That end-to-end path changes the effective pulse
-stream seen by ESPHome compared with the meter's ideal electrical model, so
-field-calibrated `pulses_per_gallon` matches real delivered gallons more
-reliably than nominal constants.
-
-`pulses_per_gallon` is compiled into the C++ component (`344.4` default).
-Recalibrate in firmware when hardware or signal conditioning changes.
-
-### Perfboard wiring schematic (shared 12V PSU + 4N35 flow isolation)
+<details>
+<summary>Perfboard wiring schematic</summary>
 
 ```text
-PERFBOARD / SOLDER BOARD SCHEMATIC (12V PSU domain + ESP32 domain)
+FLOW (12V domain → 4N35 → GPIO19):
+  +12V -- 1k -- RED_NODE -- meter RED
+  +12V -- 2.2k -- 4N35 anode
+  RED_NODE -- 4N35 cathode
+  meter BLACK -- GND12
+  4N35 collector -- GPIO19; 10k pull-up GPIO19→3.3V; emitter -- GND_ESP
 
-Create buses:
-  NET +12V
-  NET GND12
-  NET +3V3
-  NET GND_ESP
+PRESSURE (GPIO34 ADC):
+  sensor VCC→+12V, GND→GND12
+  OUT -- 10k -- GPIO34 -- 20k -- GND_ESP (optional 100nF to GND_ESP)
 
-======================================================================
-FLOW METER (EveryDrop 1004-EX, 2-wire) -> 4N35 -> ESP32 GPIO19
-======================================================================
-
-Define RED_NODE as this shared junction:
-  Meter RED (+signal), Rpullup lower end, and 4N35 Pin2 (cathode).
-
-+12V NET -- Rpullup 1k --------------------------> RED_NODE
-+12V NET -- Rled 2.2k ----> 4N35 Pin1 (Anode)
-RED_NODE ------------------> 4N35 Pin2 (Cathode)
-Meter RED -----------------> RED_NODE
-Meter BLACK (common) ----------------------------> GND12
-
-4N35 Pin5 (Collector) ---------------------------> ESP32 GPIO19
-GPIO19 -------------------- Rgpio 10k -----------> +3V3
-4N35 Pin4 (Emitter) -----------------------------> GND_ESP
-
-4N35-centered view (same wiring, pin-first):
-
-                4N35 (DIP-6, top view)
-
-            ┌─────────────────────────┐
- +12V--Rled----> Pin 1  Anode   Col 5 ├──────────> GPIO19 (ESP32 input)
- RED_NODE ------ Pin 2  Cathode        │
-            (Pin 3 NC)                 │
- GND_ESP ------- Pin 4  Emitter  Base 6│ (NC)
-            └─────────────────────────┘
-                              |
-                              +-- GPIO19 has 10k pull-up to 3.3V
-
-RED_NODE wiring (explicit):
-  +12V -- Rpullup 1k --+
-                         +-- Meter RED
-                         +-- 4N35 Pin2 (Cathode)
-
-======================================================================
-PRESSURE SENSOR (3-wire analog) -> ESP32 GPIO34 (ADC)
-======================================================================
-
-Pressure VCC ---------------------------------------> +12V NET
-Pressure GND ---------------------------------------> GND12
-
-Pressure OUT ---- R4 10k ---- PRESS_GPIO_NODE ------> ESP32 GPIO34
-                                |
-                                +---- R5 20k -------> GND_ESP
-                                |
-                                +---- C2 100nF ------> GND_ESP  [optional]
-
-======================================================================
-RAIN SENSOR + LOCAL BUTTONS + STATUS LED (ESP32 side)
-======================================================================
-
-RAIN SENSOR (normally-closed contact to GND when wet):
-  GPIO18 -------------------------------> Rain sensor input
-  GPIO18 uses ESP internal pull-up (`pullup: true` in firmware)
-  Rain sensor other lead ---------------> GND_ESP
-
-START/STOP BUTTON (momentary, normally-open):
-  GPIO21 -------------------------------> One side of button
-  GPIO21 uses ESP internal pull-up (`pullup: true`)
-  Other side of button -----------------> GND_ESP
-
-ZONE-SELECT BUTTON (momentary, normally-open):
-  GPIO22 -------------------------------> One side of button
-  GPIO22 uses ESP internal pull-up (`pullup: true`)
-  Other side of button -----------------> GND_ESP
-
-STATUS LED (active-high in current firmware):
-  GPIO4 ---- Rled_status 330..1k ------> LED anode (+)
-  LED cathode (-) ----------------------> GND_ESP
-  (Set `inverted: true` in firmware if your LED wiring is active-low.)
-
-======================================================================
-POWER / REFERENCE (MANDATORY)
-======================================================================
-
-12V PSU + ------------------------------------------> +12V NET
-12V PSU - ------------------------------------------> GND12
-
-ESP32 3V3 ------------------------------------------> +3V3
-ESP32 GND ------------------------------------------> GND_ESP
-
-# Because pressure OUT is wired directly to ESP32 ADC,
-# tie GND12 and GND_ESP together at one point (star ground).
-GND12 ----------------------------------------------> GND_ESP
+RAIN: GPIO18 (internal pull-up) -- sensor -- GND_ESP
+Star-ground GND12 and GND_ESP at one point (pressure OUT ties to ESP ADC).
 ```
+
+</details>
 
 ---
 
 ## Firmware
 
-### First flash
-
 ```bash
-cp firmware/secrets.yaml.example firmware/secrets.yaml
-# Fill in WiFi credentials, generate API key + OTA password.
+cp firmware/secrets.yaml.example firmware/secrets.yaml   # WiFi, API key, OTA password
 cd firmware
-esphome run nedorachio.yaml      # USB; first time only
+esphome run nedorachio.yaml    # USB first flash; OTA thereafter
 ```
-
-### Updating
-
-After the first flash, OTA works:
-
-```bash
-cd firmware
-esphome run nedorachio.yaml      # OTA, board stays installed
-```
-
-Counters and zone cadence use **last watering** times stored in Home Assistant
-(`input_text.nedorachio_zone_N_last_watering`, epoch seconds). The ESP reads them
-on connect and updates them after each completed run.
-
-### Layout
 
 ```
 firmware/
-  nedorachio.yaml                  # entrypoint
-  components/nedorachio/         # C++ schedule + engine (external component)
+  nedorachio.yaml
+  components/nedorachio/       # C++ scheduler + engine
   packages/
-    01-core.yaml                   # WiFi, API, OTA, time, status
-    10-nedorachio-component.yaml   # hardware I/O + component wiring
-src/nedorachio/                  # canonical Python library (pytest target)
+    10-nedorachio-component.yaml
+    11-config-profile.yaml     # ← edit schedule config here
+src/nedorachio/                # Python reference (pytest)
 ```
+
+### Config profile (`11-config-profile.yaml`)
+
+Key global fields:
+
+| Field | Purpose |
+|-------|---------|
+| `watering_window` | When scheduled runs may start (wraps midnight) |
+| `blackout.weekdays` | Days with no scheduled runs |
+| `max_attempt_minutes` | Cap per watering attempt |
+| `attempt_cooldown_minutes` | Wait after every attempt |
+| `rain_credit_mm_per_step` | mm of rain per credit step (default 10) |
+| `rain_credit_gallons_per_zone_per_step` | gal credit per zone per step (default 100) |
+| `rain_sensor_hold_hours_after_wet` | Block after rain sensor dries |
+
+Per zone: `enabled`, `weekly_goal_gallons`, pressure/flow limits.
 
 ---
 
-## Home Assistant setup
+## Home Assistant
 
-1. Copy into your HA `packages/` folder (two files only):
-   `nedorachio.yaml` and `nedorachio-dashboard.yaml`.
-   Make sure `configuration.yaml` has `homeassistant: packages: !include_dir_named packages`.
-2. Install the [OpenWeatherMap](https://www.home-assistant.io/integrations/openweathermap/)
-   integration so `sensor.openweathermap_rain_intensity` exists (expected external
-   rain input). If your entity slug differs, change `entity_id` on the
-   **Nedorachio rain observed 48h** statistics sensor in `nedorachio.yaml`.
-3. Reload template entities, statistics sensors, and automations. **Sync config to
-   device** pushes the config profile. Last-watering times live in HA `input_text`
-   helpers; the ESP reads them automatically when connected.
-4. Within 10 minutes, `sensor.nedorachio_rain_observed_48h` should populate and
-   `number.nedorachio_irrigation_controller_rain_mm_last_48h` should mirror it on
-   the controller.
-5. Edit the `notify.notify` line in `nedorachio_alarm_notify` to use your
-   actual notification target (e.g. `notify.mobile_app_yourphone`).
-6. A **Nedorachio** dashboard appears in the sidebar automatically. If entity
-   slugs differ from discovery, adjust card entities in `nedorachio-dashboard.yaml`.
-
-### Rain hold wiring
-
-Nedorachio owns the rolling 48-hour total; you only need to supply instantaneous
-rain from your weather integration.
-
-**Expected external input:** `sensor.openweathermap_rain_intensity` (OpenWeatherMap
-rain intensity in mm/h). If your integration exposes `sensor.openweathermap_rain`
-instead, the package uses that automatically as a fallback.
-
-**Generated by the package:**
+1. Copy `homeassistant/packages/nedorachio.yaml` and `nedorachio-dashboard.yaml`
+   into your HA `packages/` folder (`homeassistant: packages: !include_dir_named packages`).
+2. Install [OpenWeatherMap](https://www.home-assistant.io/integrations/openweathermap/)
+   for `sensor.openweathermap_rain_intensity` (package falls back to
+   `sensor.openweathermap_rain`).
+3. Reload template entities and automations.
+4. Edit the `notify.notify` target in `nedorachio_alarm_notify`.
+5. **First deploy mid-week:** set each zone's `week_baseline_gallons` and
+   `rain_week_baseline_mm` to current lifetime totals (or wait for Monday reset).
 
 | Entity | Role |
 |--------|------|
-| `sensor.nedorachio_rain_observed_48h` | 48h rolling sum (Statistics sensor) |
-| `number.nedorachio_irrigation_controller_rain_mm_last_48h` | Value pushed to the ESP every 10 min (or when the sum changes) |
+| `input_text.nedorachio_zone_N_last_watering` | Last run epoch (ESP reads/writes) |
+| `sensor.nedorachio_zone_N_weekly_delivered` | Gallons this calendar week |
+| `sensor.nedorachio_rain_observed_week` | Rain mm this calendar week |
+| `sensor.nedorachio_rain_credit_gallons_per_zone` | Gallon credit from rain |
+| `number.nedorachio_irrigation_controller_rain_mm_this_week` | Pushed to ESP every 10 min |
+| `switch.nedorachio_irrigation_controller_fallback_schedule_enabled` | Master schedule on/off |
 
-If you use a different rain source, edit the `entity_id` on the **Nedorachio rain
-observed 48h** statistics sensor in `nedorachio.yaml` — do not create a separate
-Statistics helper in HA.
+Dashboard (`nedorachio-dashboard.yaml`) shows four active zones by default — edit
+names and zone list to match your wiring.
 
 ---
 
 ## Operation
 
-### Scheduling model
+1. **Evaluator** (every 60 s, idle): inside watering window, not blackout, pick
+   next eligible zone with a weekly deficit (after rain credit).
+2. **Pre-flight:** master enable, time sync, rain sensor (+ hold), static
+   pressure, no latched alarm.
+3. **Run:** deliver gallons until effective weekly target or attempt cap; partial
+   delivery counts; rain sensor wet cancels mid-run.
+4. **Cooldown:** per-zone wait before that zone is eligible again.
 
-Per-zone cadence, not a weekly calendar. Each zone can run in one of two modes:
-
-- **time target**: `zone_N_total_minutes` / `_cycle_minutes` / `_soak_minutes`
-- **gallons target**: `zone_N_goal_gallons_per_cycle` / `_cycle_gallons` /
-  `_soak_minutes` with carry-forward progress across attempts
-
-A global watering window (`schedule_start_hour:minute` →
-`schedule_end_hour:minute`, default `00:00 → 08:00`) gates *when* a zone may
-start. End < start wraps midnight (e.g. `22:00 → 06:00`).
-
-Every 60s the cadence evaluator picks the lowest-numbered enabled zone whose
-cadence is due, runs pre-flight, and fires it. Zones run one at a time;
-`sensor.next_due_zone` shows what's queued.
-
-Automatic retries are not count-limited; instead, the evaluator waits global
-`attempt_cooldown_minutes` between non-completed attempts.
-
-### A normal day
-
-- Inside the watering window, the evaluator finds zone *N* due (now ≥
-  `zone_N_last_finished_epoch + zone_N_minimum_interval_hours·3600`).
-- Pre-flight runs (master enable, time sync, rain sensor, rain forecast,
-  static pressure, alarm-latch). If it fails, the cycle is aborted and the
-  reason is logged.
-- The runner executes either:
-  - time target: cycle-and-soak until `total_minutes` accrues
-  - gallons target: run until `cycle_gallons`, soak, repeat until
-    `goal_gallons_per_cycle` is reached
-- When the zone finishes (or is cancelled, or hits the runtime cap),
-  `zone_N_last_finished_epoch` is stamped and persisted to NVS — the cadence
-  resets from that point.
-- The next evaluator tick picks the next eligible zone, if any. If the window
-  closes mid-run, the in-progress zone finishes; no new zone starts until the
-  window reopens.
-- If rain accumulation crosses threshold while a zone is running, the current
-  run is cancelled immediately with cause `rain_forecast`.
-- Per-zone stats accumulate to `zone_N_gallons_total`, `zone_N_run_count`,
-  etc.; daily/monthly aggregates roll over at midnight.
-
-### Manual run
-
-- `switch.nedorachio_zone_N` is the raw on/off control (still gated by the
-  master enable / e-stop / single-zone invariant). Toggling off stamps
-  `last_finished_epoch` and therefore resets cadence timing.
-
-### Local controls
-
-Two physical buttons and an LED on the device:
-
-- **Status / select LED.** Solid ON while any zone is watering. After a
-  zone-select press, blinks N times (where N is the newly selected zone),
-  then returns to its idle state. Off when nothing is happening.
-- **Start/stop button.** Press once while idle → starts the currently
-  selected zone. The total runtime is capped by `local_button_max_min`
-  (default 30 min, HA-tunable as `number.nedorachio_manual_run_max_minutes`)
-  so an unattended press can't run forever. Press again (or press during
-  *any* run, including a scheduled full cycle) → cancels everything with
-  cause `user`. The cancellation does not retry.
-- **Zone-select button.** Cycles through enabled zones (per
-  `zones_enabled_bitmask`), wrapping at 8. The LED then blinks the new
-  selection's number so you can confirm without looking at HA. Selection
-  persists across reboots.
-
-### Schedule enable/disable
-
-- `switch.nedorachio_fallback_schedule_enabled` disables the cadence evaluator
-  indefinitely. Manual per-zone switch control remains available.
-
-### Clock survival across power loss
-
-The fallback clock uses the highest of:
-
-- `last_known_epoch` — written to NVS once an hour while HA time is valid.
-- `fallback_start_epoch_est` — hardcoded baseline (2026-06-01 11:00 EST), used
-  only on the very first boot before any HA sync.
-
-On a brand-new device with no persisted cadence history, each
-`zone_N_last_finished_epoch` initializes to this same baseline. That means the
-controller behaves as if each zone was last watered at the default baseline
-time, rather than treating missing history as "due immediately."
-
-After a reboot without WiFi, the clock resumes within ~1h of reality, so
-cadence checks (which are in hours) stay correct. Per-zone
-`last_finished_epoch` is also NVS-persisted, so a watering that completed
-just before a power loss isn't forgotten.
-
-### Alarm reference
-
-Every alarm latches `any_alarm_latched`, which blocks new pre-flights until
-cleared through maintenance actions (for example, local controls or an
-advanced/internal service call).
-
-| Alarm                            | Cause                                              | Action                  |
-|----------------------------------|----------------------------------------------------|-------------------------|
-| `alarm_pre_flight_failed`        | A pre-flight gate refused to start                 | Read `pre_flight_reason`; fix; clear fault. |
-| `alarm_runtime_exceeded`         | A zone ran longer than `maximum_runtime_minutes`   | Inspect for stuck relay; clear fault. |
-| `alarm_no_flow`                  | gpm < `zone_N_minimum_flow_gpm` after `no_flow_grace_s` | Check pump/well/valve; retry or clear. |
-| `alarm_high_flow`                | gpm > `zone_N_maximum_flow_gpm` for `high_flow_grace_s` | Check for broken pipe; clear fault. |
-| `alarm_phantom_flow`             | gpm > `phantom_flow_gpm` while no zone on for 5+ min | Check valves; clear fault. |
-| `alarm_low_pressure`             | PSI < `pressure_running_min_psi` mid-run for 5s+    | Inspect supply; retry or clear. |
-| `alarm_high_pressure`            | PSI > `pressure_high_psi` for 10s+ during run       | Inspect; cancels run only when `high_pressure_cancels_run` is on. |
-
-### Adding a fifth zone
-
-1. Wire the valve to relay 5 (default GPIO17 — verify your board) and confirm
-   the LED on the bench harness clicks when `switch.nedorachio_zone_5`
-   toggles.
-2. Set `zones_enabled_bitmask` to include bit 4. E.g. zones 1..5 enabled =
-   `0b00011111 = 31`.
-3. Tune `zone_5_total_minutes`, `zone_5_cycle_minutes`, `zone_5_soak_minutes`,
-   `zone_5_minimum_interval_hours`, `zone_5_minimum_flow_gpm`, `zone_5_maximum_flow_gpm`.
-   Runtime safety is controlled globally via `maximum_runtime_minutes`.
+Manual zone switches bypass the scheduler but still respect safety gates.
+Local start/stop and zone-select buttons work as described in the firmware YAML.
 
 ---
 
 ## Troubleshooting
 
-- **Device offline in HA.** Check `binary_sensor.nedorachio_controller_online`.
-  WiFi may have dropped; the device will fall back to its AP `nedorachio
-  fallback` if it can't reach the configured SSID.
-- **Pre-flight failing forever.** Check `text_sensor.nedorachio_last_run_outcome`
-  or grep ESPHome logs for `preflight FAIL: <reason>`. Common causes:
-  `master_enable_off`, `time_not_synced` (waiting for NTP),
-  `pressure_too_low` (static PSI below threshold).
-- **`rain_mm_last_48h` keeps blocking even after rain stopped.** The device
-  enforces `rain_hold_hours_after_forecast` after the last over-threshold
-  push; lower it or push `0` manually via Dev-Tools → Services →
-  `number.set_value`.
-- **HA went offline → device thinks it's still raining.** TTL kicks in:
-  `rain_mm_last_48h` is treated as `0` if it hasn't been pushed within
-  `rain_mm_max_age_hours` (default 12h).
-- **Counter stuck after OTA.** Globals with `restore_value: true` survive OTA;
-  if a counter resets unexpectedly, check the ESPHome change log for
-  flash-layout changes — cross-version flash can invalidate stored values.
+| Symptom | Check |
+|---------|-------|
+| Nothing schedules | `fallback_schedule_enabled`, watering window, blackout days, weekly goals met |
+| Pre-flight skip | ESPHome logs / `text.nedorachio_irrigation_controller_last_run_outcome` |
+| Weekly remaining wrong | HA goal `input_number` mirrors flash config; rain credit sensors |
+| Rain credit not applied | `rain_lifetime_mm` / `rain_week_baseline_mm`; ESP `rain_mm_this_week` stale after 12 h TTL |
+| ESP rain warnings at boot | Reload HA templates before ESP connects |
+
+---
+
+## Tests
+
+```bash
+python -m venv .venv && .venv/bin/pip install -e ".[dev]"
+.venv/bin/python -m pytest tests/ -q
+```

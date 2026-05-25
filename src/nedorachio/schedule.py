@@ -14,18 +14,82 @@ def weekday_bitmask_from_names(weekdays: tuple[str, ...]) -> int:
     return mask
 
 
-def effective_last_finished(
-    last_finished_epoch: int,
-    now_epoch: int,
-    fallback_start_epoch: int,
+def calendar_week_id(epoch: int, *, tz: ZoneInfo) -> int:
+    """ISO year×100 + ISO week number (Monday-based week)."""
+    if epoch <= 0:
+        return 0
+    dt = datetime.fromtimestamp(epoch, tz=tz)
+    iso = dt.isocalendar()
+    return iso.year * 100 + iso.week
+
+
+def maybe_apply_week_reset(
+    zones: list[ZoneRuntimeState],
     *,
-    ha_time_valid: bool,
+    week_id_shadow: int,
+    current_week_id: int,
 ) -> int:
-    if last_finished_epoch:
-        return last_finished_epoch
-    if ha_time_valid and now_epoch:
-        return now_epoch
-    return fallback_start_epoch
+    if current_week_id == 0:
+        return week_id_shadow
+    if week_id_shadow == 0:
+        return current_week_id
+    if week_id_shadow == current_week_id:
+        return week_id_shadow
+    for zs in zones:
+        zs.weekly_delivered_shadow = 0.0
+        zs.ha_weekly_delivered = 0.0
+    return current_week_id
+
+
+def weekly_delivered_effective(
+    zone: ZoneRuntimeState,
+    *,
+    ha_feed_valid: bool,
+) -> float:
+    shadow = max(0.0, zone.weekly_delivered_shadow)
+    if ha_feed_valid:
+        return max(shadow, max(0.0, zone.ha_weekly_delivered))
+    return shadow
+
+
+def effective_rain_mm_this_week(
+    config: OperationalConfig,
+    *,
+    now_epoch: int,
+) -> float:
+    ttl_s = int(config.rain_mm_max_age_hours * 3600)
+    if (
+        config.rain_mm_last_pushed_epoch == 0
+        or now_epoch - config.rain_mm_last_pushed_epoch > ttl_s
+    ):
+        return 0.0
+    return max(0.0, config.rain_mm_this_week)
+
+
+def rain_credit_gallons_per_zone(
+    rain_mm: float,
+    *,
+    mm_per_step: float,
+    gallons_per_step: float,
+) -> float:
+    if mm_per_step <= 0:
+        return 0.0
+    return max(0.0, rain_mm * (gallons_per_step / mm_per_step))
+
+
+def effective_weekly_goal(
+    goal: float,
+    rain_mm: float,
+    *,
+    mm_per_step: float,
+    gallons_per_step: float,
+) -> float:
+    credit = rain_credit_gallons_per_zone(
+        rain_mm,
+        mm_per_step=mm_per_step,
+        gallons_per_step=gallons_per_step,
+    )
+    return max(0.0, goal - credit)
 
 
 def in_watering_window(
@@ -51,71 +115,86 @@ def is_blackout_day(*, dow_mon0: int, blackout_weekday_bitmask: int) -> bool:
     return bool((blackout_weekday_bitmask >> dow_mon0) & 1)
 
 
-def snap_next_start(
-    earliest_epoch: int,
+def zone_has_weekly_deficit(
+    config: OperationalConfig,
+    zone: ZoneRuntimeState,
+    zone_id: int,
     *,
-    tz: ZoneInfo,
-    start_hour: int,
-    start_minute: int,
-    end_hour: int,
-    end_minute: int,
-    blackout_weekday_bitmask: int,
-) -> int:
-    start_min_cfg = start_hour * 60 + start_minute
-    end_min_cfg = end_hour * 60 + end_minute
-    if start_min_cfg == end_min_cfg:
-        return 0
-
-    t = (earliest_epoch // 60) * 60
-    if t < earliest_epoch:
-        t += 60
-
-    for _ in range(20160):
-        dt = datetime.fromtimestamp(t, tz=tz)
-        now_min = dt.hour * 60 + dt.minute
-        dow_mon0 = dt.weekday()
-        if start_min_cfg < end_min_cfg:
-            in_window = start_min_cfg <= now_min < end_min_cfg
-        else:
-            in_window = now_min >= start_min_cfg or now_min < end_min_cfg
-        blackout = bool((blackout_weekday_bitmask >> dow_mon0) & 1)
-        if in_window and not blackout:
-            return t
-        t += 60
-    return 0
+    ha_feed_valid: bool,
+    now_epoch: int,
+) -> bool:
+    goal = config.zone(zone_id).weekly_goal_gallons
+    if goal <= 0:
+        return False
+    rain_mm = effective_rain_mm_this_week(config, now_epoch=now_epoch)
+    target = effective_weekly_goal(
+        goal,
+        rain_mm,
+        mm_per_step=config.rain_credit_mm_per_step,
+        gallons_per_step=config.rain_credit_gallons_per_zone_per_step,
+    )
+    delivered = weekly_delivered_effective(zone, ha_feed_valid=ha_feed_valid)
+    return delivered < target
 
 
-def next_due_zone(
+def zone_cooldown_elapsed(
+    zone: ZoneRuntimeState,
+    now_epoch: int,
+    cooldown_seconds: int,
+) -> bool:
+    if cooldown_seconds <= 0 or zone.last_attempt_epoch <= 0:
+        return True
+    return now_epoch >= zone.last_attempt_epoch + cooldown_seconds
+
+
+def eligible_deficit_zones(
     config: OperationalConfig,
     zones: list[ZoneRuntimeState],
     now_epoch: int,
     *,
-    ha_time_valid: bool = True,
-) -> int:
+    ha_feed_valid: bool,
+    respect_cooldown: bool,
+) -> list[int]:
+    cooldown_s = int(config.attempt_cooldown_minutes * 60)
+    eligible: list[int] = []
     for zid in range(1, 9):
         if not config.zone_enabled(zid):
             continue
-        zcfg = config.zone(zid)
-        last = effective_last_finished(
-            zones[zid - 1].last_finished_epoch,
-            now_epoch,
-            config.fallback_start_epoch,
-            ha_time_valid=ha_time_valid,
-        )
-        interval_s = int(zcfg.min_interval_hours * 3600)
-        if now_epoch >= last + interval_s:
+        zs = zones[zid - 1]
+        if not zone_has_weekly_deficit(
+            config, zs, zid, ha_feed_valid=ha_feed_valid, now_epoch=now_epoch
+        ):
+            continue
+        if respect_cooldown and not zone_cooldown_elapsed(zs, now_epoch, cooldown_s):
+            continue
+        eligible.append(zid)
+    return eligible
+
+
+def pick_next_zone_round_robin(
+    config: OperationalConfig,
+    zones: list[ZoneRuntimeState],
+    now_epoch: int,
+    *,
+    ha_feed_valid: bool,
+    respect_cooldown: bool = True,
+) -> int:
+    eligible = eligible_deficit_zones(
+        config,
+        zones,
+        now_epoch,
+        ha_feed_valid=ha_feed_valid,
+        respect_cooldown=respect_cooldown,
+    )
+    if not eligible:
+        return 0
+
+    start = config.last_served_zone_id
+    for offset in range(1, 9):
+        zid = ((start + offset - 1) % 8) + 1
+        if zid in eligible:
             return zid
     return 0
-
-
-def cadence_due_epoch(
-    *,
-    last_finished_epoch: int,
-    min_interval_hours: float,
-    fallback_start_epoch: int,
-) -> int:
-    last = last_finished_epoch or fallback_start_epoch
-    return last + int(min_interval_hours * 3600)
 
 
 def compute_zone_plans(
@@ -127,108 +206,54 @@ def compute_zone_plans(
     rain_blocked: bool = False,
     rain_blocked_reason: str | None = None,
     ha_time_valid: bool = True,
+    ha_feed_valid: bool = False,
 ) -> dict[int, ZonePlan]:
     if not config.fallback_schedule_enabled or now_epoch == 0 or not ha_time_valid:
         return {}
 
-    ideals: list[tuple[int, int]] = []
-    for zid in range(1, 9):
-        if not config.zone_enabled(zid):
-            continue
-        zcfg = config.zone(zid)
-        if zcfg.min_interval_hours <= 0:
-            continue
-        last = effective_last_finished(
-            zones[zid - 1].last_finished_epoch,
-            now_epoch,
-            config.fallback_start_epoch,
-            ha_time_valid=ha_time_valid,
-        )
-        raw_due = cadence_due_epoch(
-            last_finished_epoch=last,
-            min_interval_hours=zcfg.min_interval_hours,
-            fallback_start_epoch=config.fallback_start_epoch,
-        )
-        ideal = snap_next_start(
-            raw_due,
-            tz=tz,
-            start_hour=config.schedule_start_hour,
-            start_minute=config.schedule_start_minute,
-            end_hour=config.schedule_end_hour,
-            end_minute=config.schedule_end_minute,
-            blackout_weekday_bitmask=config.blackout_weekday_bitmask,
-        )
-        if ideal:
-            ideals.append((ideal, zid))
-
-    ideals.sort(key=lambda x: (x[0], x[1]))
-
-    cursor = 0
-    dur_s = max(60, int(config.maximum_runtime_minutes * 60))
-    assigned: dict[int, int] = {}
-
-    for ideal, zid in ideals:
-        merged = (now_epoch // 60) * 60 if ideal <= now_epoch else ideal
-        if cursor > merged:
-            merged = cursor
-        actual = snap_next_start(
-            merged,
-            tz=tz,
-            start_hour=config.schedule_start_hour,
-            start_minute=config.schedule_start_minute,
-            end_hour=config.schedule_end_hour,
-            end_minute=config.schedule_end_minute,
-            blackout_weekday_bitmask=config.blackout_weekday_bitmask,
-        )
-        if not actual:
-            continue
-        assigned[zid] = actual
-        next_cursor = actual + dur_s
-        cursor = snap_next_start(
-            next_cursor,
-            tz=tz,
-            start_hour=config.schedule_start_hour,
-            start_minute=config.schedule_start_minute,
-            end_hour=config.schedule_end_hour,
-            end_minute=config.schedule_end_minute,
-            blackout_weekday_bitmask=config.blackout_weekday_bitmask,
-        ) or next_cursor
-
+    cooldown_s = int(config.attempt_cooldown_minutes * 60)
     plans: dict[int, ZonePlan] = {}
+
+    rain_mm = effective_rain_mm_this_week(config, now_epoch=now_epoch)
+
     for zid in range(1, 9):
         if not config.zone_enabled(zid):
             continue
         zcfg = config.zone(zid)
         zs = zones[zid - 1]
-        last = effective_last_finished(
-            zs.last_finished_epoch,
-            now_epoch,
-            config.fallback_start_epoch,
-            ha_time_valid=ha_time_valid,
+        goal = zcfg.weekly_goal_gallons
+        target = effective_weekly_goal(
+            goal,
+            rain_mm,
+            mm_per_step=config.rain_credit_mm_per_step,
+            gallons_per_step=config.rain_credit_gallons_per_zone_per_step,
         )
-        raw_due = cadence_due_epoch(
-            last_finished_epoch=last,
-            min_interval_hours=zcfg.min_interval_hours,
-            fallback_start_epoch=config.fallback_start_epoch,
-        )
+        delivered = weekly_delivered_effective(zs, ha_feed_valid=ha_feed_valid)
+        remaining = max(0.0, target - delivered) if target > 0 else 0.0
+        goal_met = goal > 0 and delivered >= target
+
         blocked_reason: str | None = None
-        if now_epoch < raw_due:
-            blocked_reason = "not_due"
+        if goal_met:
+            blocked_reason = "weekly_goal_met"
         elif rain_blocked:
             blocked_reason = rain_blocked_reason or "rain_hold"
-        next_start = assigned.get(zid)
-        if next_start is None and blocked_reason is None:
-            blocked_reason = "unschedulable"
-        goal = zcfg.goal_gallons if zcfg.schedule_mode == 1 else 0.0
-        delivered = zs.cycle_delivered_gallons
-        remaining = max(0.0, goal - delivered) if goal > 0 else 0.0
+        elif not zone_cooldown_elapsed(zs, now_epoch, cooldown_s):
+            blocked_reason = "attempt_cooldown"
+
+        next_eligible: int | None = None
+        if not goal_met and zs.last_attempt_epoch > 0 and cooldown_s > 0:
+            next_eligible = zs.last_attempt_epoch + cooldown_s
+        elif not goal_met and blocked_reason is None:
+            next_eligible = now_epoch
+
         plans[zid] = ZonePlan(
             zone_id=zid,
-            next_start_epoch=next_start,
+            next_eligible_epoch=next_eligible,
             blocked_reason=blocked_reason,
-            cycle_delivered_gallons=delivered,
-            cycle_remaining_gallons=remaining,
-            last_finished_epoch=last,
+            weekly_delivered_gallons=delivered,
+            weekly_remaining_gallons=remaining,
+            weekly_goal_met=goal_met,
+            last_finished_epoch=zs.last_finished_epoch,
         )
     return plans
 
@@ -240,6 +265,7 @@ def update_scheduled_next_epochs(
     now_epoch: int,
     tz: ZoneInfo,
     ha_time_valid: bool = True,
+    ha_feed_valid: bool = False,
 ) -> None:
     for zs in zones:
         zs.scheduled_next_epoch = 0
@@ -247,10 +273,15 @@ def update_scheduled_next_epochs(
         return
 
     plans = compute_zone_plans(
-        config, zones, now_epoch=now_epoch, tz=tz, ha_time_valid=ha_time_valid
+        config,
+        zones,
+        now_epoch=now_epoch,
+        tz=tz,
+        ha_time_valid=ha_time_valid,
+        ha_feed_valid=ha_feed_valid,
     )
     for zid, plan in plans.items():
-        zones[zid - 1].scheduled_next_epoch = plan.next_start_epoch or 0
+        zones[zid - 1].scheduled_next_epoch = plan.next_eligible_epoch or 0
 
 
 def compute_watering_schedule(
@@ -260,8 +291,8 @@ def compute_watering_schedule(
     now_epoch: int,
     tz: ZoneInfo,
     zones_enabled: set[int],
-    min_interval_hours: float,
-    maximum_runtime_minutes: float,
+    attempt_cooldown_minutes: float,
+    max_attempt_minutes: float,
     start_hour: int,
     start_minute: int,
     end_hour: int,
@@ -269,15 +300,17 @@ def compute_watering_schedule(
     blackout_weekdays: tuple[str, ...],
     fallback_start_epoch: int,
     rain_blocked: bool = False,
+    ha_feed_valid: bool = False,
 ) -> dict[int, ZonePlan]:
     """High-level planner API for unit tests using ConfigProfile-shaped inputs."""
     blackout_mask = weekday_bitmask_from_names(blackout_weekdays)
     zone_states = [
         ZoneRuntimeState(
             last_finished_epoch=zones_runtime.get(zid, ZoneRuntime()).last_finished_epoch,
-            cycle_delivered_gallons=zones_runtime.get(
+            weekly_delivered_shadow=zones_runtime.get(
                 zid, ZoneRuntime()
-            ).cycle_delivered_gallons,
+            ).weekly_delivered_shadow,
+            last_attempt_epoch=zones_runtime.get(zid, ZoneRuntime()).last_attempt_epoch,
         )
         for zid in range(1, 9)
     ]
@@ -289,15 +322,19 @@ def compute_watering_schedule(
         schedule_end_hour=end_hour,
         schedule_end_minute=end_minute,
         blackout_weekday_bitmask=blackout_mask,
-        maximum_runtime_minutes=maximum_runtime_minutes,
+        max_attempt_minutes=max_attempt_minutes,
+        attempt_cooldown_minutes=attempt_cooldown_minutes,
         fallback_start_epoch=fallback_start_epoch,
+        ha_weekly_feed_valid=ha_feed_valid,
     )
     for zid in zones_enabled:
-        config.zones[zid - 1].min_interval_hours = min_interval_hours
+        if zid in zones_runtime:
+            config.zones[zid - 1].weekly_goal_gallons = 100.0
     return compute_zone_plans(
         config,
         zone_states,
         now_epoch=now_epoch,
         tz=tz,
         rain_blocked=rain_blocked,
+        ha_feed_valid=ha_feed_valid,
     )

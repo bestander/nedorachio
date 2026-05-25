@@ -12,8 +12,7 @@ namespace nedorachio {
 enum class EnginePhase {
   IDLE,
   PREFLIGHT_WAIT,
-  RUNNING_GALLONS,
-  SOAKING,
+  RUNNING,
 };
 
 class IrrigationEngine {
@@ -34,12 +33,14 @@ class IrrigationEngine {
   void refresh_schedule_plan(uint32_t now_epoch, bool ha_time_valid) { this->update_plan(now_epoch, ha_time_valid); }
   void set_fallback_schedule_enabled(bool enabled) { this->config_.fallback_schedule_enabled = enabled; }
   bool fallback_schedule_enabled() const { return this->config_.fallback_schedule_enabled; }
-  void set_rain_mm_last_48h(float mm, uint32_t pushed_epoch) {
-    this->config_.rain_mm_last_48h = mm;
+  void set_rain_mm_this_week(float mm, uint32_t pushed_epoch) {
+    this->config_.rain_mm_this_week = mm;
     this->config_.rain_mm_last_pushed_epoch = pushed_epoch;
   }
   void apply_runtime(const RuntimeState &state);
   RuntimeState runtime_state(uint32_t now_epoch) const;
+
+  void on_zone_weekly_delivered(int zone_id, float gallons, uint32_t now_epoch);
 
   uint32_t zone_last_finished_epoch(int zone_id) const;
   void set_zone_last_finished(int zone_id, uint32_t epoch, uint32_t now_epoch, bool ha_time_valid);
@@ -58,24 +59,30 @@ class IrrigationEngine {
   }
   const char *current_phase() const;
   const char *last_run_outcome() const { return this->last_run_outcome_; }
+  const char *tracking_source() const { return this->tracking_source_; }
   int last_completed_zone() const { return this->last_completed_zone_; }
   float last_run_gallons() const { return this->last_run_gallons_; }
   uint32_t gallons_completion_sequence() const { return this->gallons_completion_sequence_; }
   float zone_gallons_total(int zone_id) const;
   void set_zone_gallons_total(int zone_id, float gallons);
  private:
-  void drive_zone(int zone_id, bool on, bool stamp_cadence);
-  void cadence_evaluator(uint32_t now_epoch, bool ha_time_valid);
+  void drive_zone(int zone_id, bool on, bool stamp_finished);
+  void weekly_budget_evaluator(uint32_t now_epoch, bool ha_time_valid);
   void update_plan(uint32_t now_epoch, bool ha_time_valid);
+  void apply_week_reset_if_needed_(uint32_t now_epoch, bool ha_time_valid);
+  bool ha_weekly_feed_valid_(uint32_t now_epoch) const;
   void run_safety(uint32_t now_epoch, uint32_t now_ms);
-  void start_schedule_fire(int zone_id, uint32_t now_epoch);
+  void start_weekly_run(int zone_id, uint32_t now_epoch);
   void step_run(uint32_t now_epoch, uint32_t now_ms);
+  void finish_attempt_(int zone_id, uint32_t now_epoch, bool completed);
+  void sync_weekly_delivered_(int zone_id, float gallons_done);
   bool preflight(uint32_t now_epoch, bool is_schedule);
   void set_phase_(EnginePhase next, const char *reason);
   void record_gallons_delivery_(int zone_id, float gallons);
   float read_pressure(bool zone_on) const;
   float read_flow_gpm() const;
   float read_flow_total() const;
+  float integrate_run_gallons_() const;
 
   esphome::output::BinaryOutput *outputs_[kNumZones]{};
   esphome::sensor::Sensor *pressure_{nullptr};
@@ -87,11 +94,13 @@ class IrrigationEngine {
   ZoneRuntime zones_[kNumZones]{};
   uint32_t rain_sensor_last_wet_epoch_{0};
   uint32_t rain_forecast_last_high_epoch_{0};
-  uint32_t last_non_completed_attempt_epoch_{0};
+  int week_id_shadow_{0};
+  char tracking_source_[8]{"local"};
+  uint32_t ha_weekly_last_update_epoch_{0};
 
   int currently_on_zone_{0};
   uint32_t zone_started_at_ms_{0};
-  bool stamp_cadence_on_zone_off_{true};
+  bool stamp_finished_on_zone_off_{true};
   bool any_alarm_latched_{false};
   bool skip_next_run_pending_{false};
   bool is_manual_run_{false};
@@ -99,13 +108,9 @@ class IrrigationEngine {
   EnginePhase phase_{EnginePhase::IDLE};
   int run_zone_id_{0};
   float run_goal_gallons_{0};
-  float run_cycle_gallons_{0};
-  float run_soak_minutes_{0};
   float run_gallons_done_{0};
-  float run_base_gallons_{0};
+  float run_start_delivered_{0};
   float run_started_total_{0};
-  float chunk_start_total_{0};
-  int soak_seconds_left_{0};
   int preflight_wait_left_{0};
   bool run_cancel_requested_{false};
   char run_cancel_cause_[32]{};

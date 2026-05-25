@@ -1,18 +1,27 @@
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from nedorachio.models import ZoneRuntime
-from nedorachio.schedule import compute_watering_schedule
+from nedorachio.models import OperationalConfig, ZoneRuntime, ZoneRuntimeState
+from nedorachio.schedule import (
+    calendar_week_id,
+    compute_zone_plans,
+    effective_weekly_goal,
+    pick_next_zone_round_robin,
+    rain_credit_gallons_per_zone,
+    update_scheduled_next_epochs,
+    zone_has_weekly_deficit,
+)
 
 
 FIXTURE = {
-    "version": 1,
+    "version": 2,
     "global": {
         "watering_window": {"start": "23:00", "end": "09:00", "timezone": "America/New_York"},
-        "rain_accumulation_threshold_mm_48h": 5,
-        "rain_accumulation_hold_hours_after_threshold": 24,
+        "rain_credit_mm_per_step": 10,
+        "rain_credit_gallons_per_zone_per_step": 100,
+        "rain_sensor_hold_hours_after_wet": 24,
         "attempt_cooldown_minutes": 20,
-        "maximum_runtime_minutes": 60,
+        "max_attempt_minutes": 30,
         "no_flow_grace_seconds": 60,
         "no_flow_sustain_seconds": 30,
         "blackout": {"weekdays": ["thu", "fri"]},
@@ -20,11 +29,7 @@ FIXTURE = {
     "zones": {
         "1": {
             "enabled": True,
-            "mode": "gallons_target",
-            "goal_gallons_per_cycle": 400,
-            "cycle_gallons": 200,
-            "soak_minutes": 15,
-            "minimum_interval_hours": 72,
+            "weekly_goal_gallons": 100,
             "start_minimum_psi": 35,
             "start_maximum_psi": 85,
             "minimum_running_psi": 20,
@@ -40,125 +45,74 @@ def _epoch(y, m, d, h, mi=0):
     return int(datetime(y, m, d, h, mi, tzinfo=ZoneInfo("America/New_York")).timestamp())
 
 
-def test_zone_not_due_before_interval():
-    runtime = {1: ZoneRuntime(last_finished_epoch=_epoch(2026, 6, 1, 6, 0))}
-    plans = compute_watering_schedule(
-        FIXTURE["global"],
-        runtime,
-        now_epoch=_epoch(2026, 6, 2, 6, 0),
-        tz=ZoneInfo("America/New_York"),
-        zones_enabled={1},
-        min_interval_hours=72,
-        maximum_runtime_minutes=60,
-        start_hour=23,
-        start_minute=0,
-        end_hour=9,
-        end_minute=0,
-        blackout_weekdays=("thu", "fri"),
-        fallback_start_epoch=_epoch(2026, 6, 1, 6, 0),
-    )
-    assert plans[1].blocked_reason == "not_due"
+def test_calendar_week_id_monday_boundary():
+    mon = _epoch(2026, 5, 25, 0, 0)
+    tz = ZoneInfo("America/New_York")
+    assert calendar_week_id(mon, tz=tz) == calendar_week_id(_epoch(2026, 5, 26, 12, 0), tz=tz)
 
 
-def test_due_zone_snaps_into_overnight_window():
-    runtime = {1: ZoneRuntime(last_finished_epoch=_epoch(2026, 5, 28, 6, 0))}
-    plans = compute_watering_schedule(
-        FIXTURE["global"],
-        runtime,
-        now_epoch=_epoch(2026, 6, 1, 10, 0),
-        tz=ZoneInfo("America/New_York"),
-        zones_enabled={1},
-        min_interval_hours=72,
-        maximum_runtime_minutes=60,
-        start_hour=23,
-        start_minute=0,
-        end_hour=9,
-        end_minute=0,
-        blackout_weekdays=("thu", "fri"),
-        fallback_start_epoch=_epoch(2026, 6, 1, 6, 0),
-    )
-    assert plans[1].next_start_epoch is not None
-    start_local = datetime.fromtimestamp(plans[1].next_start_epoch, ZoneInfo("America/New_York"))
-    assert start_local.hour >= 23 or start_local.hour < 9
-
-
-def test_blackout_pushes_off_blackout_day():
-    runtime = {1: ZoneRuntime(last_finished_epoch=_epoch(2026, 5, 26, 6, 0))}
-    plans = compute_watering_schedule(
-        FIXTURE["global"],
-        runtime,
-        now_epoch=_epoch(2026, 6, 4, 6, 0),
-        tz=ZoneInfo("America/New_York"),
-        zones_enabled={1},
-        min_interval_hours=72,
-        maximum_runtime_minutes=60,
-        start_hour=23,
-        start_minute=0,
-        end_hour=9,
-        end_minute=0,
-        blackout_weekdays=("thu", "fri"),
-        fallback_start_epoch=_epoch(2026, 6, 1, 6, 0),
-    )
-    start_local = datetime.fromtimestamp(plans[1].next_start_epoch, ZoneInfo("America/New_York"))
-    assert start_local.strftime("%a").lower() not in ("thu", "fri")
-
-
-def test_never_run_zone_anchors_to_ha_now_not_fallback():
-    """Zones with last_finished=0 should plan from HA time once synced, not hardcoded fallback."""
-    from nedorachio.models import OperationalConfig, ZoneRuntimeState
-    from nedorachio.schedule import compute_zone_plans, update_scheduled_next_epochs
-
-    now = _epoch(2026, 5, 24, 15, 0)
-    fallback = _epoch(2026, 6, 1, 11, 0)
-    zones = [ZoneRuntimeState(last_finished_epoch=0)]
+def test_zone_with_weekly_deficit_has_plan():
+    runtime = {1: ZoneRuntime(weekly_delivered_shadow=40.0)}
     config = OperationalConfig(
         zones_enabled_bitmask=1,
         fallback_schedule_enabled=True,
-        schedule_start_hour=23,
-        schedule_end_hour=9,
-        maximum_runtime_minutes=60,
-        fallback_start_epoch=fallback,
+        ha_weekly_feed_valid=True,
     )
-    config.zones[0].min_interval_hours = 72
-
+    config.zones[0].weekly_goal_gallons = 100.0
+    zones = [ZoneRuntimeState(weekly_delivered_shadow=40.0, ha_weekly_delivered=40.0)]
     plans = compute_zone_plans(
         config,
         zones,
-        now_epoch=now,
+        now_epoch=_epoch(2026, 6, 1, 10, 0),
         tz=ZoneInfo("America/New_York"),
-        ha_time_valid=True,
+        ha_feed_valid=True,
     )
-    start_local = datetime.fromtimestamp(plans[1].next_start_epoch, ZoneInfo("America/New_York"))
-    assert start_local.year == 2026
-    assert start_local.month == 5
-    assert start_local.day >= 27
+    assert plans[1].weekly_remaining_gallons == 60.0
+    assert plans[1].blocked_reason is None
 
-    zones_unsynced = [ZoneRuntimeState(last_finished_epoch=0)]
-    update_scheduled_next_epochs(
+
+def test_zone_at_weekly_goal_is_blocked():
+    runtime = {1: ZoneRuntime(weekly_delivered_shadow=100.0)}
+    config = OperationalConfig(zones_enabled_bitmask=1, fallback_schedule_enabled=True)
+    config.zones[0].weekly_goal_gallons = 100.0
+    zones = [ZoneRuntimeState(weekly_delivered_shadow=100.0)]
+    plans = compute_zone_plans(
         config,
-        zones_unsynced,
-        now_epoch=now,
+        zones,
+        now_epoch=_epoch(2026, 6, 1, 10, 0),
         tz=ZoneInfo("America/New_York"),
-        ha_time_valid=False,
     )
-    assert zones_unsynced[0].scheduled_next_epoch == 0
+    assert plans[1].blocked_reason == "weekly_goal_met"
+    assert plans[1].weekly_goal_met is True
+
+
+def test_round_robin_skips_zone_in_cooldown():
+    config = OperationalConfig(
+        zones_enabled_bitmask=0b11,
+        attempt_cooldown_minutes=20.0,
+        ha_weekly_feed_valid=True,
+    )
+    config.zones[0].weekly_goal_gallons = 100.0
+    config.zones[1].weekly_goal_gallons = 100.0
+    now = _epoch(2026, 6, 3, 6, 0)
+    zones = [
+        ZoneRuntimeState(weekly_delivered_shadow=0.0, last_attempt_epoch=now - 60),
+        ZoneRuntimeState(weekly_delivered_shadow=0.0, last_attempt_epoch=0),
+    ]
+    assert pick_next_zone_round_robin(config, zones, now, ha_feed_valid=True) == 2
 
 
 def test_compute_zone_plans_empty_when_master_schedule_off():
-    from nedorachio.models import OperationalConfig, ZoneRuntimeState
-    from nedorachio.schedule import compute_zone_plans
-
     now = _epoch(2026, 5, 24, 15, 0)
-    zones = [ZoneRuntimeState(last_finished_epoch=0)]
+    zones = [ZoneRuntimeState()]
     config = OperationalConfig(
         zones_enabled_bitmask=1,
         fallback_schedule_enabled=False,
         schedule_start_hour=23,
         schedule_end_hour=9,
-        maximum_runtime_minutes=60,
-        fallback_start_epoch=_epoch(2026, 6, 1, 11, 0),
+        max_attempt_minutes=30,
     )
-    config.zones[0].min_interval_hours = 24
+    config.zones[0].weekly_goal_gallons = 100.0
 
     plans = compute_zone_plans(
         config,
@@ -168,3 +122,63 @@ def test_compute_zone_plans_empty_when_master_schedule_off():
         ha_time_valid=True,
     )
     assert plans == {}
+
+
+def test_update_scheduled_next_when_time_unsynced():
+    now = _epoch(2026, 5, 24, 15, 0)
+    zones = [ZoneRuntimeState()]
+    config = OperationalConfig(zones_enabled_bitmask=1, fallback_schedule_enabled=True)
+    config.zones[0].weekly_goal_gallons = 100.0
+    update_scheduled_next_epochs(
+        config,
+        zones,
+        now_epoch=now,
+        tz=ZoneInfo("America/New_York"),
+        ha_time_valid=False,
+    )
+    assert zones[0].scheduled_next_epoch == 0
+
+
+def test_rain_credit_gallons_linear_ratio():
+    assert rain_credit_gallons_per_zone(10.0, mm_per_step=10.0, gallons_per_step=100.0) == 100.0
+    assert rain_credit_gallons_per_zone(25.0, mm_per_step=10.0, gallons_per_step=100.0) == 250.0
+
+
+def test_rain_credit_reduces_weekly_remaining():
+    tz = ZoneInfo("America/New_York")
+    now = _epoch(2026, 5, 24, 15, 0)
+    config = OperationalConfig(zones_enabled_bitmask=1, fallback_schedule_enabled=True)
+    config.zones[0].weekly_goal_gallons = 400.0
+    config.rain_mm_this_week = 20.0
+    config.rain_mm_last_pushed_epoch = now
+    zones = [ZoneRuntimeState(weekly_delivered_shadow=0.0, ha_weekly_delivered=0.0) for _ in range(8)]
+
+    plans = compute_zone_plans(
+        config,
+        zones,
+        now_epoch=now,
+        tz=tz,
+        ha_time_valid=True,
+        ha_feed_valid=True,
+    )
+    assert plans[1].weekly_remaining_gallons == 200.0
+    assert zone_has_weekly_deficit(config, zones[0], 1, ha_feed_valid=True, now_epoch=now)
+
+
+def test_rain_credit_can_satisfy_weekly_goal():
+    tz = ZoneInfo("America/New_York")
+    now = _epoch(2026, 5, 24, 15, 0)
+    config = OperationalConfig(zones_enabled_bitmask=1, fallback_schedule_enabled=True)
+    config.zones[0].weekly_goal_gallons = 400.0
+    config.rain_mm_this_week = 40.0
+    config.rain_mm_last_pushed_epoch = now
+    zones = [ZoneRuntimeState(weekly_delivered_shadow=0.0) for _ in range(8)]
+
+    plans = compute_zone_plans(config, zones, now_epoch=now, tz=tz, ha_time_valid=True)
+    assert plans[1].weekly_goal_met
+    assert effective_weekly_goal(
+        400.0,
+        40.0,
+        mm_per_step=config.rain_credit_mm_per_step,
+        gallons_per_step=config.rain_credit_gallons_per_zone_per_step,
+    ) == 0.0

@@ -30,6 +30,7 @@ class NedorachioComponent : public esphome::Component {
   void loop() override;
 
   void on_zone_last_watering(int zone_id, uint32_t epoch);
+  void on_zone_weekly_delivered(int zone_id, float gallons);
 
   HaPublishRequest consume_ha_publish_request();
 
@@ -56,9 +57,9 @@ class NedorachioComponent : public esphome::Component {
       return true;
     return this->engine_->fallback_schedule_enabled();
   }
-  void set_rain_mm_last_48h(float mm, uint32_t epoch) {
+  void set_rain_mm_this_week(float mm, uint32_t epoch) {
     if (this->engine_ != nullptr)
-      this->engine_->set_rain_mm_last_48h(mm, epoch);
+      this->engine_->set_rain_mm_this_week(mm, epoch);
   }
 
  protected:

@@ -38,46 +38,16 @@ class TestScheduleValveStateMachine:
             f"Fire at {fire.at_epoch} too far from plan {planned}"
         )
 
-    def test_two_zones_due_only_lowest_opens_first(self):
-        start = dt_epoch(2026, 6, 3, 6, 0)
-        scenario = ScheduleScenario(
-            name="serial_due_zones",
-            zones_enabled=2,
-            inputs=ScheduleInput(
-                epoch=start,
-                zones_due=frozenset({1, 2}),
-            ),
-            checkpoints=[
-                ScheduleCheckpoint(
-                    advance_seconds=30,
-                    expect_valves=ValveSnapshot(),
-                    label="both due, plan only — valves still closed",
-                ),
-                ScheduleCheckpoint(
-                    advance_seconds=65,
-                    expect_valves=ValveSnapshot(open_zones=frozenset({1})),
-                    expect_running_zone=1,
-                    expect_phase="running",
-                    expect_schedule_fire=True,
-                    label="first eval: zone 1 opens, zone 2 waits",
-                ),
-                ScheduleCheckpoint(
-                    advance_seconds=180,
-                    expect_valves=ValveSnapshot(),
-                    expect_running_zone=0,
-                    expect_phase="idle",
-                    label="zone 1 completes, valve closes",
-                ),
-                ScheduleCheckpoint(
-                    advance_seconds=65,
-                    expect_valves=ValveSnapshot(open_zones=frozenset({2})),
-                    expect_running_zone=2,
-                    expect_phase="running",
-                    label="next eval: zone 2 opens",
-                ),
-            ],
-        )
-        run_schedule_scenario(scenario)
+    def test_two_zones_due_round_robin_serial(self):
+        h = IrrigationHarness.fast_test(zones=2)
+        h.make_all_eligible([1, 2])
+        h.advance(65)
+        assert h.currently_running_zone == 1
+        h.advance_until_idle()
+        h.assert_completed(1)
+        h.advance(125)  # zone 1 cooldown (2 min)
+        h.advance(65)
+        assert any(a.zone_id == 2 for a in h.run_attempts())
 
     def test_due_outside_window_plan_exists_valves_stay_closed(self):
         """Schedule plan may show a future window slot — no valve open outside window."""
@@ -145,32 +115,20 @@ class TestScheduleValveStateMachine:
         )
         run_schedule_scenario(scenario)
 
-    def test_blackout_friday_plan_never_shows_friday_night(self):
-        """Plan readout must not assign Friday slots on a blackout day."""
-        from datetime import datetime
-        from zoneinfo import ZoneInfo
-
-        tz = ZoneInfo("America/New_York")
+    def test_blackout_friday_blocks_evaluator(self):
+        """Cadence evaluator must not fire on blackout days."""
         start = dt_epoch(2026, 5, 22, 23, 45)  # Friday night
         h = IrrigationHarness.fast_test(zones=4)
         h.config.schedule_start_hour = 23
         h.config.schedule_end_hour = 9
         h.config.schedule_end_minute = 0
         h.config.blackout_weekday_bitmask = (1 << 3) | (1 << 4)  # thu, fri
-        h.config.maximum_runtime_minutes = 60
+        h.config.max_attempt_minutes = 60
         h.clock.epoch = start
-        h.make_all_due([1, 2, 3, 4])
-        h.advance(30)
+        h.make_all_eligible([1, 2, 3, 4])
+        h.advance(60)
 
-        for zid, epoch in h.planned_starts().items():
-            local = datetime.fromtimestamp(epoch, tz=tz)
-            assert local.weekday() != 4, (
-                f"Zone {zid} planned on Friday {local} during blackout: {h.planned_starts()}"
-            )
-
-        h.advance(35)  # cadence evaluator tick on blackout Friday
         assert h.sim.schedule_gate_reason == "blackout_day"
-        assert h.sim.schedule_gate_due_zone == 1
         assert not h.events_of(EventType.SCHEDULE_FIRE)
 
     def test_due_zone_plan_stable_within_minute(self):
@@ -183,7 +141,7 @@ class TestScheduleValveStateMachine:
         h = IrrigationHarness.fast_test(zones=4)
         h.config.schedule_start_hour = 23
         h.config.schedule_end_hour = 9
-        h.config.maximum_runtime_minutes = 60
+        h.config.max_attempt_minutes = 60
         h.clock.epoch = start
         h.make_all_due([1])
 

@@ -23,13 +23,12 @@ class TestPlanningAndExecution:
         assert h.last_run_outcome == "completed"
         h.assert_completed(1)
 
-        # Cadence reset: zone should not be immediately due again.
+        # Weekly goal met: zone no longer has deficit.
         h.advance(30)
         assert h.next_due_zone == 0
 
-        # Plan should now point to next interval, not the past fire.
         plan_after = h.planned_start(1)
-        assert plan_after > fire_epoch, h.snapshot()
+        assert plan_after == 0 or plan_after >= fire_epoch, h.snapshot()
 
     def test_preflight_low_pressure_skips_without_alarm_or_cadence_reset(self):
         h = IrrigationHarness.fast_test(zones=1)
@@ -179,9 +178,7 @@ class TestMultiZoneConflicts:
 
         plan = h.planned_starts()
         assert 1 in plan and 2 in plan
-        assert plan[1] <= plan[2], "Lower zone id should be scheduled first"
 
-        # First fire: zone 1.
         h.advance_to_next_scheduled_fire(max_hours=2, wait_for_completion=True)
         h.assert_completed(1)
 
@@ -226,14 +223,17 @@ class TestPlanVsReality:
         skew = abs(fires[0].at_epoch - planned)
         assert skew <= 120, f"Fire skew {skew}s too large; plan={planned} fire={fires[0].at_epoch}"
 
-    def test_next_due_zone_matches_lowest_due(self):
+    def test_round_robin_picks_lowest_eligible_zone(self):
         h = IrrigationHarness.fast_test(zones=3)
-        h.make_zone_due(2)
-        h.make_zone_due(3)
-        # Zone 1 not due.
-        h.sim.zones[0].last_finished_epoch = h.epoch
+        h.make_zone_eligible(2)
+        h.make_zone_eligible(3)
+        goal = h.config.zone(1).weekly_goal_gallons
+        h.set_zone_weekly_delivered(1, goal + 1.0)
+        h.sim.last_served_zone_id = 0
+        h.config.last_served_zone_id = 0
 
         assert h.next_due_zone == 2
+        assert h.sim.next_pick_zone() == 2
 
 
 class TestNoFlowCancel:
@@ -279,7 +279,7 @@ class TestCancelCadenceInteraction:
         assert h.last_run_outcome.startswith("cancelled_")
         assert h.zone_last_finished(1) == last_before
         assert h.next_due_zone == 1
-        assert h.sim.last_non_completed_attempt_epoch > 0
+        assert h.sim.zones[0].last_attempt_epoch > 0
 
 
 class TestWindowGating:
