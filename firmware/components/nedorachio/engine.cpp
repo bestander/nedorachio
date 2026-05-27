@@ -404,7 +404,7 @@ void IrrigationEngine::step_run(uint32_t now_epoch, uint32_t now_ms) {
     return;
   }
 
-  if (this->run_gallons_done_ >= this->run_goal_gallons_) {
+  if (!this->is_manual_run_ && this->run_gallons_done_ >= this->run_goal_gallons_) {
     ESP_LOGI(TAG, "run completed z=%d delivered=%.2f/%.2fg", zid, this->run_gallons_done_, this->run_goal_gallons_);
     this->record_gallons_delivery_(zid, std::max(0.0f, session_gal));
     this->stamp_finished_on_zone_off_ = true;

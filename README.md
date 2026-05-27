@@ -167,7 +167,8 @@ names and zone list to match your wiring.
    delivery counts; rain sensor wet cancels mid-run.
 4. **Cooldown:** per-zone wait before that zone is eligible again.
 
-Manual zone switches bypass the scheduler but still respect safety gates.
+Manual zone switches bypass the scheduler and weekly gallon quota (you can run a zone
+after its weekly goal is met); they still respect safety gates (rain, no-flow, attempt cap).
 Local start/stop and zone-select buttons work as described in the firmware YAML.
 
 ---

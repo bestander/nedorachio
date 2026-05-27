@@ -183,6 +183,8 @@ def check_ha_weekly_gallons_tracking() -> list[str]:
         engine_text = _read(fw_engine)
         if "accept_ha_weekly_update" not in engine_text:
             violations.append("Firmware must reject stale HA weekly_delivered decreases")
+        if "!this->is_manual_run_ && this->run_gallons_done_ >= this->run_goal_gallons_" not in engine_text:
+            violations.append("Firmware must not stop manual runs when weekly goal is already met")
     if fw_schedule.is_file():
         schedule_text = _read(fw_schedule)
         if "next_schedule_opportunity_epoch" not in schedule_text:
